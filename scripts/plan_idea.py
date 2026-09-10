@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Print a compact proof-idea map; expand only when --full is requested."""
+"""Print a compact proof-idea map with optional discovery or control detail."""
 
 from __future__ import annotations
 
 import argparse
 import textwrap
 
-from proof_doctor import external_pattern_queries
 from start_proof import central_lemma_suggestions, idea_rows, select_playbooks
 
 
 def wrap(text: str) -> str:
     return textwrap.fill(text, width=88, subsequent_indent="  ")
+
+
+def focused_playbooks(selected: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    if not selected:
+        return selected
+    if selected[0][1] >= 2 and (
+        len(selected) == 1 or selected[0][1] - selected[1][1] >= 2
+    ):
+        return selected[:1]
+    return selected[:2]
 
 
 def print_compact(claim: str, selected: list[tuple[str, int]]) -> None:
@@ -41,20 +50,35 @@ def print_compact(claim: str, selected: list[tuple[str, int]]) -> None:
     print("\nChoose one next artifact")
     print("- State one kernel: local claim, implication for the theorem, evidence type, and failure shape.")
     print("- Make one falsifiable local prediction and name the cheapest observation that would keep or retire the idea.")
-    print("- Compare one proof route, one falsification route, and one orthogonal evidence route.")
+    print("- Choose one proof route. Attach one falsifier and, only if needed, one orthogonal check; they test the route rather than form parallel proof portfolios.")
     print("- Continue only with a route that controls the failure world and has a verification hook.")
     print("- If no kernel appears, retrieve one close theorem pattern or repair the statement; do not draft a long proof.")
 
 
-def print_full() -> None:
+def print_discovery() -> None:
     print("\nExtended search")
+    print("- Select exactly one move below that matches the named obstruction; do not execute the list as a workflow.")
     print("- Discovery: if a threshold, potential, policy, hard instance, active set, coefficient, or exact answer is unknown, infer it from tiny/tight cases and reserve a holdout check.")
-    print("- Novel problem: treat memory as unverified; first scan Scholar/recent public work and verify the closest result and frontier gap, then define the candidate representation, exact evaluator, simplification ladder, promotion rule, and budget. For construct or find-all tasks, freeze the answer type, forbid target-restating answers, and separate witness soundness from completeness.")
+    print("- Unknown answer or object: freeze its admissible type, exact validity check, and one holdout before search; forbid target-restating answers.")
     print("- Bottleneck surgery: shrink and negate the missing lemma, then move one rung on the representation ladder before proving, falsifying, retrieving, certifying, or repairing it.")
     print("- A failed bounded witness search may suggest a rigidity or invariant conjecture; it creates a new proof obligation and never proves the target.")
     print("- Construction seeds: dual/slack, Bellman gap, envelope term, deviation graph, coupling, KL bridge, potential, benchmark, or hard instance.")
     print("- Algebra forms: add-subtract benchmark, gap/telescope, completing square, conjugate/dual, log/KL/determinant, symmetrization, or conditioning on a good event.")
+    print("- Certificate-first: write the checkable certificate conditions, then solve backward from the conclusion and tight case for the simplest object that satisfies them.")
+    print("- Local-to-global: pair one local exchange, derivative, deviation, or drift fact with the exact convexity, lattice, envelope, Bellman, or induction principle that globalizes it.")
+    print("- Abstraction-refinement: start from the smallest faithful model, refine only the feature responsible for failure, and keep the surviving invariant as a new lemma target.")
+    print("- Bottom-up synthesis: prove or refute at most two special cases or auxiliary facts, then infer the shared invariant or strengthening instead of accumulating side lemmas.")
+    print("- Equality-driven algebra: impose boundary and zero-slack conditions, fit the smallest ansatz, reserve a holdout, and factor the exact residual to expose the real lemma.")
+    print("- Trick replay: migrate a paper move only through its assumptions, transformation, output artifact, verifier, and failure mode.")
+    print("- Representation witness: give the concrete map, admissible image, and implication back; require only the directions the target needs, not an unnecessary bijection.")
+    print("- Failed closure: derive the residual or operation that breaks the construction, then try one additional invariant or coordinate and prove its preservation.")
+    print("- Refutation scope: distinguish a witness against the original theorem, a child lemma, and a faulty encoding before repairing the statement.")
     print("- Good-gap test: require the kernel to be smaller, non-circular, assumption-explicit, and locally checkable.")
+
+
+def print_controls() -> None:
+    print("\nFrontier and answer controls")
+    print("- Novel problem: treat memory as unverified; first scan Scholar/recent public work and verify the closest result and frontier gap, then define the candidate representation, exact evaluator, simplification ladder, promotion rule, and budget. For construct or find-all tasks, freeze the answer type, forbid target-restating answers, and separate witness soundness from completeness.")
 
     print("\nOne-move control")
     print("- Record current subgoal, proposed move, expected artifact, check, and proof-state delta.")
@@ -89,18 +113,37 @@ def print_full() -> None:
     print("- Audit Lean/API artifacts for `sorry`, admitted axioms, unresolved obligations, and missing assembly.")
 
 
+def print_full() -> None:
+    print_discovery()
+    print_controls()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("claim", help="The theorem, lemma, or proof goal")
-    parser.add_argument("--full", action="store_true", help="Add construction, repair, retrieval, and tool-control details")
+    detail = parser.add_mutually_exclusive_group()
+    detail.add_argument(
+        "--discovery",
+        action="store_true",
+        help="Add only high-leverage construction and idea-discovery moves",
+    )
+    detail.add_argument(
+        "--full",
+        action="store_true",
+        help="Add discovery, repair, retrieval, evidence, and tool-control details",
+    )
     parser.add_argument("--include-paper-queries", action="store_true", help="Print claim-specific literature search prompts")
     args = parser.parse_args()
 
-    selected = select_playbooks(args.claim)
+    selected = focused_playbooks(select_playbooks(args.claim))
     print_compact(args.claim, selected)
     if args.full:
         print_full()
+    elif args.discovery:
+        print_discovery()
     if args.include_paper_queries:
+        from proof_doctor import external_pattern_queries
+
         print("\nSearch prompts")
         for query in external_pattern_queries(args.claim, selected):
             print(f"- {query}")

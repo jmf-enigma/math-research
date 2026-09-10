@@ -269,6 +269,33 @@ def main() -> int:
             ),
         }
     )
+    idea_discovery = run(
+        str(SCRIPTS / "plan_idea.py"),
+        "In a finite discounted MDP, the Bellman operator is a contraction.",
+        "--discovery",
+    )
+    checks.append(
+        {
+            "name": "discovery-map-stays-mathematical-and-light",
+            "ok": all(
+                phrase in idea_discovery.stdout
+                for phrase in [
+                    "Certificate-first",
+                    "Local-to-global",
+                    "Abstraction-refinement",
+                    "Bottom-up synthesis",
+                    "Equality-driven algebra",
+                    "Trick replay",
+                ]
+            )
+            and "Optional matched strategy trial" not in idea_discovery.stdout
+            and "Evidence-layered search packet" not in idea_discovery.stdout
+            and "Outside patterns and tools" not in idea_discovery.stdout
+            and "Scholar" not in idea_discovery.stdout
+            and "learning-theory-playbook.md" not in idea_discovery.stdout
+            and "uniform good event" not in idea_discovery.stdout,
+        }
+    )
 
     mechanism = run(
         str(SCRIPTS / "select_playbook.py"),
@@ -1040,7 +1067,7 @@ raise SystemExit(1)
                 and bool(failed_runs[0][1]["diagnostic_fingerprint"])
                 and failed_runs[1][0] == 1
                 and failed_runs[1][1]["prior_same_failure_count"] == 1
-                and failed_runs[1][1]["recommended_owner"] == "theory-proof-workbench"
+                and failed_runs[1][1]["recommended_owner"] == "math-research"
                 and "same Lean failure signature" in failed_runs[1][1]["repair"]
                 and local_failure.returncode == 1
                 and local_failure_result["failure_class"] == "LOCAL_PROOF"
@@ -1054,7 +1081,7 @@ raise SystemExit(1)
                 == 4
                 and mathematical_failure.returncode == 1
                 and mathematical_failure_result["recommended_owner"]
-                == "theory-proof-workbench"
+                == "math-research"
                 and mathematical_failure_result["formal_failure_surgery"]["activation"]
                 == "not-applicable"
                 and "declared failure stage is mathematical"
@@ -1914,7 +1941,13 @@ print("mock referee completed")
     lean_bridge_text = (ROOT / "references" / "lean-formalization-bridge.md").read_text(
         encoding="utf-8"
     )
+    expert_consultation_text = (
+        ROOT / "references" / "expert-consultation.md"
+    ).read_text(encoding="utf-8")
     skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    agent_text = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+    proof_loop_text = (SCRIPTS / "proof_loop.py").read_text(encoding="utf-8")
+    idea_planner_text = (SCRIPTS / "plan_idea.py").read_text(encoding="utf-8")
     template_text = (SCRIPTS / "start_proof.py").read_text(encoding="utf-8")
     trick_template_text = (SCRIPTS / "new_trick_card.py").read_text(encoding="utf-8")
     audited_arxiv_ids = {
@@ -2097,6 +2130,58 @@ print("mock referee completed")
     )
     checks.append(
         {
+            "name": "high-leverage-discovery-is-reachable",
+            "ok": all(
+                phrase in skill_text
+                for phrase in [
+                    "plan_idea.py",
+                    "--discovery",
+                    "certificate-first backward design",
+                    "local-to-global upgrade",
+                    "abstraction-refinement",
+                    "bottom-up synthesis",
+                    "equality-driven construction",
+                    "source-checked proof migration",
+                ]
+            )
+            and all(
+                phrase in proof_idea_text
+                for phrase in [
+                    "Certificate-first backward design",
+                    "Local-to-global upgrade",
+                    "Abstraction-refinement and bottom-up synthesis",
+                    "Equality-driven construction and algebra",
+                    "Proof-move migration and trick replay",
+                    "Theorem repair",
+                ]
+            )
+            and all(
+                phrase in proof_loop_text
+                for phrase in [
+                    "certificate-first backward design",
+                    "local-to-global upgrade",
+                    "equality-driven",
+                    "abstraction-refinement",
+                    "bottom-up special-case synthesis",
+                    "source-checked proof migration",
+                ]
+            )
+            and all(
+                phrase in idea_planner_text
+                for phrase in [
+                    "Certificate-first",
+                    "Local-to-global",
+                    "Abstraction-refinement",
+                    "Bottom-up synthesis",
+                    "Equality-driven algebra",
+                    "Trick replay",
+                ]
+            )
+            and "choose one high-leverage discovery move" in agent_text,
+        }
+    )
+    checks.append(
+        {
             "name": "specialist-return-and-lean-fast-lane",
             "ok": all(
                 phrase in skill_text
@@ -2119,13 +2204,34 @@ print("mock referee completed")
             and "One integrator owns theorem fidelity" in research_text,
         }
     )
+    checks.append(
+        {
+            "name": "expert-consultation-is-bounded-and-non-evidentiary",
+            "ok": "expert-consultation.md" in skill_text
+            and '"expert-consultation"' in proof_loop_text
+            and all(
+                phrase in expert_consultation_text
+                for phrase in [
+                    "one call per unchanged proof-state tuple",
+                    "The hard cap is two calls",
+                    "fresh: true",
+                    "no `recall`",
+                    "proof_effect=none",
+                    "explicitly opts in for the current task",
+                    "stop immediately and do not retry",
+                    "Run the proposed falsifier first",
+                    "Never cite the consultation itself as proof authority",
+                ]
+            ),
+        }
+    )
 
     loop_smoke = json.loads(run(str(SCRIPTS / "smoke_proof_loop.py")).stdout)
     checks.append(
         {
             "name": "bounded-natural-proof-loop",
             "ok": bool(loop_smoke.get("ok"))
-            and len(loop_smoke.get("checks", [])) == 12,
+            and len(loop_smoke.get("checks", [])) == 15,
         }
     )
 

@@ -287,7 +287,7 @@ def classify_failure(
     return (
         "LOCAL_PROOF",
         "Lean rejected the current local proof term or tactic sequence",
-        "repair the first reported error once; return to Theory Workbench if the same state persists",
+        "repair the first reported error once; return to Math Research if the same state persists",
     )
 
 
@@ -295,7 +295,7 @@ def owner_for(stage: str, eligible: bool) -> str:
     if eligible:
         return "theory-integrator"
     if stage in {"statement-fidelity", "mathematical", "assembly"}:
-        return "theory-proof-workbench"
+        return "math-research"
     return "lean-theorem-formalizer"
 
 
@@ -425,7 +425,7 @@ def verify(args: argparse.Namespace) -> int:
     if packet.get("claim_sha256") != state["claim_sha256"] or packet.get("claim_revision") != state.get(
         "claim_revision", 0
     ):
-        raise ValueError("stale Lean handoff: the Theory Workbench claim has changed")
+        raise ValueError("stale Lean handoff: the Math Research claim has changed")
 
     node = packet.get("node")
     target = packet.get("lean_target")
@@ -575,9 +575,9 @@ def verify(args: argparse.Namespace) -> int:
     stage = args.failure_stage
     owner = owner_for(stage, eligible)
     if not eligible and stage in {"auto", "local-proof"} and previous_same_failures >= 1:
-        owner = "theory-proof-workbench"
+        owner = "math-research"
         repair = (
-            "the same Lean failure signature has repeated; return the node to Theory Workbench "
+            "the same Lean failure signature has repeated; return the node to Math Research "
             "for premise retrieval, decomposition, or statement audit"
         )
     repeated_local_failure = (
@@ -593,9 +593,9 @@ def verify(args: argparse.Namespace) -> int:
         fingerprint=fingerprint,
         previous_same_failures=previous_same_failures,
     )
-    if owner == "theory-proof-workbench" and not repeated_local_failure:
+    if owner == "math-research" and not repeated_local_failure:
         repair = args.repair.strip() if args.repair else (
-            "return the exact Lean diagnostic to Theory Workbench for statement, mathematical, or assembly repair"
+            "return the exact Lean diagnostic to Math Research for statement, mathematical, or assembly repair"
         )
     proof_state_delta = (
         "target formalized locally and ready for parent assembly"

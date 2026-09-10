@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import time
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,23 +37,94 @@ from run_referee import (
     run_referee,
     terminate_process_group,
 )
+from start_proof import idea_rows, lemma_items, select_playbooks
+from loop_checkpoint import (
+    checked_path, empty_checkpoint, load_checkpoint, local_descriptor, make_evidence_request,
+    merge_references, referee_action, save_checkpoint,
+)
 
 
 MAX_GENERATION_BYTES = 512 * 1024
 MAX_LOG_BYTES = 4 * 1024 * 1024
 MAX_REFERENCES = 8
 MAX_HISTORICAL_ROUTES = 3
+MAX_PACKET_RETIRED_ROUTES = 12
+DUPLICATE_ROUTE_REASON = "The controller found an exact duplicate route signature in this pool."
+EXCLUDED_ROUTE_REASON = "The controller matched this route to an already retired signature."
+
+
+def compact_domain_seed_packet(claim: str) -> dict[str, Any]:
+    """Return one conservative domain hint, or nothing when routing is ambiguous."""
+    ranked = [(name, value) for name, value in select_playbooks(claim) if value > 0]
+    if not ranked or ranked[0][1] < 2:
+        return {}
+    if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < 2:
+        return {}
+    selected = [ranked[0]]
+    return {
+        "playbook": selected[0][0],
+        "score": selected[0][1],
+        "central_object_hints": [
+            {
+                "object": obj,
+                "failure_controlled": failure,
+                "assumptions_needed": assumptions,
+                "decisive_check": hook,
+            }
+            for obj, failure, assumptions, hook in idea_rows(selected)[:3]
+        ],
+        "candidate_kernels": lemma_items(selected)[:4],
+        "proof_effect": "none",
+        "use_rule": (
+            "Use at most one matching hint. Discard the packet when its assumptions or target "
+            "type do not fit the exact theorem."
+        ),
+    }
+
+
+def generation_domain_seed_packet(
+    claim: str, mode: str, stable_plan: dict[str, Any] | None
+) -> dict[str, Any]:
+    if mode not in {"solve", "replan"} or stable_plan is not None:
+        return {}
+    return compact_domain_seed_packet(claim)
+
+
+def scout_domain_seed_packet(claim: str, role: str) -> dict[str, Any]:
+    """Keep the adversarial scout independent from the structural seed."""
+    if role != "structural":
+        return {}
+    return compact_domain_seed_packet(claim)
+
+
+def packet_retired_routes(
+    retired_routes: dict[str, dict[str, str]],
+) -> list[dict[str, str]]:
+    return list(retired_routes.values())[-MAX_PACKET_RETIRED_ROUTES:]
+
+
+def remember_retired_route(
+    retired_routes: dict[str, dict[str, str]],
+    signature: str,
+    record: dict[str, str],
+) -> None:
+    """Store a retired route while preserving most-recent-use ordering."""
+    retired_routes.pop(signature, None)
+    retired_routes[signature] = record
 
 SCOUT_ROLES = {
     "structural": (
-        "Derive one route from the negation, tight cases, assumption mechanism, or a better "
-        "representation. Prefer a concrete invariant, extremal object, coupling, potential, "
-        "dual object, or construction over a generic method label."
+        "Derive one route from a certificate, local-to-global upgrade, smallest faithful "
+        "abstraction, or better representation. Prefer a concrete invariant, extremal object, "
+        "coupling, potential, dual object, or construction over a generic method label. If no "
+        "top-down route is visible, use at most two bottom-up special-case probes and infer the "
+        "shared structural lemma they suggest."
     ),
     "adversarial": (
         "Stress the claim and its assumptions with the smallest decisive failure world. If the "
-        "claim survives, turn that failure analysis into a materially different proof route or "
-        "counterexample construction."
+        "claim survives, combine the failure with the equality or zero-slack case to reverse-"
+        "engineer a materially different construction, algebraic normal form, missing invariant, "
+        "or counterexample route."
     ),
 }
 
@@ -73,6 +145,17 @@ premise, representation, or construction that directly answers its recorded fail
 `status=route` only when the proposed route can be attempted from the supplied material. If one
 external artifact is indispensable, return `status=blocked` and name exactly that capability.
 
+For an invented object, derive constraints from equality, symmetry, boundaries, or binding
+conditions, reserve a holdout case, and inspect the exact residual. For a migrated proof move,
+state the assumptions and transformation that make it legal here. These are discovery controls,
+not extra routes to list.
+
+The optional `domain_seed` is a compact hint, not a premise. Use at most one entry only after its
+assumptions and target type match the exact theorem; otherwise ignore the packet entirely.
+`retired_routes` may contain only a recent detail window; `retired_route_count` is the total, and
+the controller screens exact route signatures against the complete local history. Use the recent
+details to reject semantic renamings rather than assuming the truncated window is the full record.
+
 Return JSON matching `scout.schema.json` and nothing else.
 """
 
@@ -92,6 +175,9 @@ a circular key step, missing assembly, or a decisive known failure. Use `defer` 
 plausible but simply not selected, so a later run may revisit it. If no route passes, return one
 exact obstruction and one requested capability.
 
+`retired_routes` is a recent detail window. The controller has already removed exact-signature
+repeats against the full history; use the supplied details to reject semantic renamings as well.
+
 Return JSON matching `selection.schema.json` and nothing else.
 """
 
@@ -104,6 +190,30 @@ Work like a mathematician, not a workflow narrator. Preserve the exact claim. Be
 why the statement may be true, what central object controls it, and what the first nonroutine
 implication is. Check the smallest informative failure or boundary case. Choose one motivated
 route and try to carry it to a complete paper-order proof before considering alternatives.
+
+If the central object is not visible, choose exactly one high-leverage discovery move that fits
+the obstruction: certificate-first backward design, local-to-global upgrade, equality-driven
+construction and residual algebra, abstraction-refinement, bottom-up special-case synthesis, or
+source-checked proof migration. Do not enumerate them as parallel sketches. Convert the chosen
+move into one exact proof kernel and one decisive falsifier before drafting the full proof.
+
+When changing representation, supply the concrete map and the recovery implication; preserve
+domains, quantifiers, feasibility, multiplicity, and boundary cases that the target needs.
+For an optimization equivalence, both feasibility directions and objective ordering need
+justification; equal values on sampled instances are insufficient. Do not demand a bijection
+when a one-way bound or a lifting with a recovery map suffices.
+When a construction fails, isolate the exact residual or failed closure property, then ask
+whether one additional invariant, coordinate, or witness repairs that property. Derive it
+symbolically when possible; a fitted pattern remains a conjecture. Test a new object against
+the failed example and one independent boundary case, then prove the general implication.
+If a formal counterexample appears, identify whether it attacks the source claim, a child lemma,
+or the encoding before changing the theorem. Preserve independently checked lemmas on replanning.
+
+The optional `domain_seed` has `proof_effect=none`. It may suggest one object or kernel only after
+an exact assumption match. Ignore it when classification is ambiguous or it does not fit.
+`retired_routes` may contain only recent details. The controller, not this packet, enforces the
+complete exact-signature check reported by `retired_route_count`. Use the recent details to avoid
+reconstructing the same mechanism under cosmetic wording changes.
 
 Every auxiliary object or lemma must have a mathematical motivation, be consumed by the route,
 and make the parent target strictly simpler. Do not hide the theorem in a placeholder lemma or
@@ -122,6 +232,12 @@ writing around it. In `replan` mode the failed stable plan is absent.
 If `search_enabled` is true, search only for the named obstruction in the referee feedback or
 prior blocked result. Prefer a primary source, check definitions and assumptions, and use the
 result to complete or reject the route. Do not turn the search turn into a broad literature scan.
+
+Request `expert-consultation` only for a named, nonroutine idea-level kernel after explaining why
+retrieval, symbolic algebra, finite search, optimization, or formalization does not directly
+decide it. Do not request it during initial reading, for a complete-proof verdict, or as generic
+brainstorming. The outer proof owner decides whether an approved provider is available and keeps
+the returned suggestion at `proof_effect=none` until independently replayed.
 
 Return `status=candidate` only for a complete proof or explicit counterexample. Otherwise return
 `status=blocked` with the first exact obstruction and the single external capability most likely
@@ -170,6 +286,7 @@ GENERATION_SCHEMA: dict[str, Any] = {
                 "optimization",
                 "formalization",
                 "new-representation",
+                "expert-consultation",
             ],
         },
     },
@@ -257,22 +374,26 @@ SELECTION_SCHEMA: dict[str, Any] = {
 
 
 def normalize_signature(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
+    # Preserve Chinese, case-sensitive variables, and relations such as < versus >.
+    # This is conservative text identity, not a test of mathematical equivalence.
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", text)).strip()
 
 
 def route_signature(payload: dict[str, Any]) -> str:
-    material = "|".join(
+    fields = [
         normalize_signature(str(payload.get(field, "")))
         for field in ("route_family", "central_object", "proof_kernel")
-    )
+    ]
+    material = json.dumps([2, fields, sorted(payload.get("assumptions_used", []))], ensure_ascii=False)
     return sha256_text(material)
 
 
 def scout_signature(payload: dict[str, Any]) -> str:
-    material = "|".join(
+    fields = [
         normalize_signature(str(payload.get(field, "")))
         for field in ("route_family", "central_object", "key_original_step")
-    )
+    ]
+    material = json.dumps([2, fields, sorted(payload.get("assumptions_used", []))], ensure_ascii=False)
     return sha256_text(material)
 
 
@@ -570,32 +691,44 @@ def route_record(payload: dict[str, Any], signature: str, failure: str) -> dict[
     }
 
 
+def bookkeeping_retirement(record: dict[str, Any]) -> bool:
+    """Ignore old deduplication records, including exclusions propagated from them."""
+    return (record.get("event_type") == "hard_exploration_screened"
+            and record.get("failure_witness") in {DUPLICATE_ROUTE_REASON, EXCLUDED_ROUTE_REASON})
+
+
 def prior_retired_routes(project: Path) -> dict[str, dict[str, str]]:
     retired: dict[str, dict[str, str]] = {}
-    for envelope in iter_channel(project, "attempts"):
+    for envelope in iter_channel(project, "attempts", current_claim_only=True):
         record = envelope.get("record", {})
-        if record.get("outcome") in {"wrong", "retired"} or record.get(
-            "event_type"
-        ) == "hard_exploration_selected":
+        if bookkeeping_retirement(record):
+            continue
+        if record.get("outcome") == "retired" and record.get("signature_version") == 2:
             value = record.get("route_signature")
             if isinstance(value, str) and value:
-                retired[value] = {
-                    "route_signature": value,
-                    "route_family": str(record.get("route_family", "")),
-                    "central_object": str(record.get("central_object", "")),
-                    "proof_kernel": str(record.get("target_lemma", "")),
-                    "failure": str(
-                        record.get("failure_witness", "")
-                        or "This route was already selected for a committed proof attempt."
-                    ),
-                }
+                remember_retired_route(
+                    retired,
+                    value,
+                    {
+                        "route_signature": value,
+                        "route_family": str(record.get("route_family", "")),
+                        "central_object": str(record.get("central_object", "")),
+                        "proof_kernel": str(record.get("target_lemma", "")),
+                        "failure": str(
+                            record.get("failure_witness", "")
+                            or "The owner explicitly retired this route."
+                        ),
+                    },
+                )
     return retired
 
 
 def prior_untried_routes(project: Path) -> list[dict[str, Any]]:
     pool: dict[str, dict[str, Any]] = {}
-    for envelope in iter_channel(project, "attempts"):
+    for envelope in iter_channel(project, "attempts", current_claim_only=True):
         record = envelope.get("record", {})
+        if bookkeeping_retirement(record):
+            continue
         signature = record.get("route_signature")
         if not isinstance(signature, str) or not signature:
             continue
@@ -619,7 +752,7 @@ def prior_untried_routes(project: Path) -> list[dict[str, Any]]:
                 "requested_capability": "none",
                 "route_signature": signature,
             }
-        elif event_type == "hard_exploration_selected" or outcome in {"wrong", "retired"}:
+        elif event_type == "hard_exploration_selected" or outcome == "retired":
             pool.pop(signature, None)
     return list(pool.values())[-MAX_HISTORICAL_ROUTES:]
 
@@ -682,6 +815,8 @@ def record_plan_disposition(
             "central_object": candidate["central_object"],
             "failure_witness": reason,
             "route_signature": candidate["route_signature"],
+            "signature_version": 2,
+            "assumptions_used": candidate["assumptions_used"],
         },
     )
 
@@ -706,7 +841,9 @@ def prepare_scout(
         "acceptance_contract": read_acceptance_contract(project),
         "runtime_brief": runtime_brief(project, limit=1),
         "scout_role": {"name": role, "instruction": SCOUT_ROLES[role]},
-        "retired_routes": [retired_routes[key] for key in sorted(retired_routes)],
+        "domain_seed": scout_domain_seed_packet(state["claim"], role),
+        "retired_routes": packet_retired_routes(retired_routes),
+        "retired_route_count": len(retired_routes),
         "references": references,
         "budget": {"one_route_only": True, "search_enabled": False},
     }
@@ -758,7 +895,8 @@ def prepare_selector(
         "acceptance_contract": read_acceptance_contract(project),
         "candidates": candidates,
         "blocked_scouts": blocked_scouts,
-        "retired_routes": [retired_routes[key] for key in sorted(retired_routes)],
+        "retired_routes": packet_retired_routes(retired_routes),
+        "retired_route_count": len(retired_routes),
         "trust_note": "Route proposals are unverified mathematical hypotheses.",
     }
     atomic_write_json(run_dir / "packet.json", packet)
@@ -818,6 +956,7 @@ def run_hard_exploration(
     loop_dir: Path,
     retired_routes: dict[str, dict[str, str]],
     started: float,
+    on_call: Any = None,
 ) -> dict[str, Any]:
     exploration_dir = loop_dir / "hard-exploration"
     exploration_dir.mkdir()
@@ -844,6 +983,8 @@ def run_hard_exploration(
                 "status": "budget-exhausted",
                 "reason": "wall-time budget exhausted during route scouting",
             }
+        if on_call is not None:
+            on_call()
         run_command(command, run_dir, min(args.generator_timeout, max(1, int(remaining))))
         scout = load_scout(run_dir)
         signature = scout_signature(scout)
@@ -876,8 +1017,8 @@ def run_hard_exploration(
                 project,
                 loop_dir.name,
                 candidate,
-                "retire",
-                "The controller matched this route to an already retired signature.",
+                "excluded",
+                EXCLUDED_ROUTE_REASON,
             )
             continue
         if signature in seen_signatures:
@@ -885,8 +1026,8 @@ def run_hard_exploration(
                 project,
                 loop_dir.name,
                 candidate,
-                "retire",
-                "The controller found an exact duplicate route signature in this pool.",
+                "duplicate",
+                DUPLICATE_ROUTE_REASON,
             )
             continue
         seen_signatures.add(signature)
@@ -920,6 +1061,8 @@ def run_hard_exploration(
             "status": "budget-exhausted",
             "reason": "wall-time budget exhausted before plan selection",
         }
+    if on_call is not None:
+        on_call()
     run_command(
         selector_command,
         selector_dir,
@@ -1020,7 +1163,9 @@ def prepare_generation(
         "claim": state["claim"],
         "acceptance_contract": read_acceptance_contract(project),
         "runtime_brief": runtime_brief(project, limit=1),
-        "retired_routes": [retired_routes[key] for key in sorted(retired_routes)],
+        "domain_seed": generation_domain_seed_packet(state["claim"], mode, stable_plan),
+        "retired_routes": packet_retired_routes(retired_routes),
+        "retired_route_count": len(retired_routes),
         "referee_feedback": feedback,
         "previous_candidate": previous_candidate if mode == "repair" else None,
         "stable_plan": stable_plan if mode in {"solve", "repair"} else None,
@@ -1105,6 +1250,8 @@ def record_generation(project: Path, payload: dict[str, Any], signature: str, ou
             "failure_witness": payload["obstruction"],
             "route_signature": signature,
             "requested_capability": payload["requested_capability"],
+            "signature_version": 2,
+            "assumptions_used": payload["assumptions_used"],
         },
     )
 
@@ -1126,6 +1273,8 @@ def record_retirement(
             "central_object": payload["central_object"],
             "failure_witness": failure,
             "route_signature": signature,
+            "signature_version": 2,
+            "assumptions_used": payload.get("assumptions_used", []),
         },
     )
 
@@ -1135,11 +1284,57 @@ def write_summary(loop_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def check_review_inputs(
+    project: Path, checkpoint: dict[str, Any], packet: dict[str, Any],
+    packet_descriptor: dict[str, str],
+) -> None:
+    """Bind a verdict to its frozen packet and the current project inputs."""
+    packet_path = checked_path(project, packet_descriptor)
+    state = ensure_runtime(project)
+    if (packet["claim"], state["claim_sha256"], state.get("claim_revision", 0)) != (
+        state["claim"], checkpoint["claim_sha256"], checkpoint["claim_revision"]
+    ):
+        raise ValueError("the reviewed theorem differs from the current theorem")
+    contract_hash = sha256_text(packet["acceptance_contract"])
+    if contract_hash != checkpoint["acceptance_contract_sha256"] or contract_hash != sha256_text(read_acceptance_contract(project)):
+        raise ValueError("the acceptance contract changed after the referee packet was prepared")
+    pending = checkpoint["pending_candidate"]
+    candidate = checked_path(project, pending["artifact"])
+    if (packet["candidate_proof_source"] != pending["artifact"]["path"]
+        or packet["candidate_kind"] != pending["generation"]["candidate_kind"]
+        or packet["candidate_proof_sha256"] != sha256_text(packet["candidate_proof"])
+        or packet["candidate_proof_sha256"] != sha256_text(candidate.read_text(encoding="utf-8"))):
+        raise ValueError("the candidate differs from the reviewed snapshot")
+    expected = {item["path"]: item["sha256"] for item in checkpoint["references"]}
+    reviewed = {item["source_path"]: item["sha256"] for item in packet["references"]}
+    if reviewed != expected or len(reviewed) != len(packet["references"]):
+        raise ValueError("the references differ from the reviewed snapshot")
+    for item in packet["references"]:
+        checked_path(project, {"path": item["source_path"], "sha256": item["sha256"]})
+        copied_path = (packet_path.parent / item["path"]).relative_to(project).as_posix()
+        checked_path(project, {"path": copied_path, "sha256": item["sha256"]})
+
+
 def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
-    if args.max_iterations < 1:
-        raise ValueError("--max-iterations must be positive")
-    if args.max_wall_seconds < 1:
-        raise ValueError("--max-wall-seconds must be positive")
+    if min(args.max_iterations, args.max_wall_seconds, args.generator_timeout, args.referee_timeout) < 1:
+        raise ValueError("iteration and time budgets must be positive")
+    checkpoint = load_checkpoint(project)
+    if getattr(args, "fresh_attempt", False):
+        old_usage = checkpoint["usage"]
+        checkpoint = empty_checkpoint(project)
+        checkpoint["usage"] = old_usage
+    contract_hash = sha256_text(read_acceptance_contract(project))
+    contract_changed = checkpoint["acceptance_contract_sha256"] != contract_hash
+    checkpoint["acceptance_contract_sha256"] = contract_hash
+    if contract_changed and checkpoint["phase"] != "complete":
+        checkpoint.update(phase="verify" if checkpoint["pending_candidate"] else "solve",
+                          stable_plan=None, repaired_routes=[], repair_origin_signature=None,
+                          previous_candidate=None, referee_feedback=None, evidence_request=None,
+                          resume_phase="solve", result=None)
+    args.model = args.model or checkpoint["model"]
+    args.reasoning_effort = args.reasoning_effort or checkpoint["reasoning_effort"]
+    checkpoint.update(model=args.model, reasoning_effort=args.reasoning_effort)
+    args.reference, new_evidence = merge_references(project, checkpoint, args.reference)
     if len(args.reference) > MAX_REFERENCES:
         raise ValueError(f"at most {MAX_REFERENCES} references may be supplied")
 
@@ -1148,327 +1343,271 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
     loop_dir = runtime_dir(project) / "proof_loop_runs" / loop_id
     loop_dir.mkdir(parents=True)
     started = time.monotonic()
+    previous_wall = checkpoint["usage"]["wall_seconds"]
     retired_routes = prior_retired_routes(project)
-    stable_plan: dict[str, Any] | None = None
-    repaired_routes: set[str] = set()
-    repair_origin_signature: str | None = None
-    search_next = False
-    search_used = False
-    mode = "solve"
-    feedback: dict[str, Any] | None = None
-    previous_candidate: dict[str, Any] | None = None
+    iteration = 0
+
+    def persist() -> None:
+        if not args.prepare_only:
+            checkpoint["usage"]["wall_seconds"] = previous_wall + time.monotonic() - started
+            save_checkpoint(project, checkpoint)
+
+    def finish(payload: dict[str, Any]) -> dict[str, Any]:
+        persist()
+        return write_summary(loop_dir, {
+            **payload, "run_id": loop_id, "iterations_completed": iteration,
+            "resume_phase": checkpoint["phase"], "cumulative_usage": checkpoint["usage"],
+            "model_requested": args.model, "reasoning_effort": args.reasoning_effort,
+        })
+
+    def remaining() -> int:
+        return max(0, int(args.max_wall_seconds - (time.monotonic() - started)))
+
+    def charge_call() -> None:
+        checkpoint["usage"]["agent_calls"] += 1
+        persist()
+
+    def retire(payload: dict[str, Any], signature: str, issue: str) -> None:
+        record_retirement(project, payload, signature, issue)
+        remember_retired_route(retired_routes, signature, route_record(payload, signature, issue))
+
+    def await_evidence(capability: str, generation: dict[str, Any], issue: Any, resume: str) -> dict[str, Any]:
+        pending = checkpoint["pending_candidate"]
+        descriptor = pending["artifact"] if pending else None
+        request = make_evidence_request(
+            capability, generation.get("proof_kernel") or ensure_runtime(project)["claim"],
+            generation.get("assumptions_used", []), issue, resume_phase=resume, candidate=descriptor,
+        )
+        checkpoint.update(phase="awaiting-evidence", resume_phase=resume, evidence_request=request)
+        return finish({
+            "status": "needs-evidence", "requested_capability": capability,
+            "obstruction": issue, "proof_kernel": request["local_claim"],
+            "route_family": generation.get("route_family", ""), "evidence_request": request,
+            "candidate": str(project / descriptor["path"]) if descriptor else None,
+        })
 
     append_record(project, "events", {"event_type": "proof_loop_started", "run_id": loop_id})
+    legacy_result = (checkpoint["phase"] == "complete"
+                     and not (checkpoint["result"] or {}).get("referee_packet_descriptor"))
+    if checkpoint["phase"] == "complete" and (new_evidence or contract_changed or legacy_result):
+        checkpoint["phase"] = "verify"
+        if not args.prepare_only:
+            update_state(project, proof_status="unresolved", current_node="pending evidence recheck",
+                         last_decisive_artifact="", evidence_summary={
+                             "disposition": "pending", "basis": "updated-acceptance-inputs",
+                             "previous_result": checkpoint["result"]["artifact_descriptor"],
+                             "human_reviewed": False, "formal_verification": False,
+                         })
+        checkpoint["result"] = None
+    if checkpoint["phase"] == "complete":
+        pending = checkpoint["pending_candidate"]
+        if pending:
+            checked_path(project, pending["artifact"])
+        result = checkpoint["result"]
+        if result:
+            checked_path(project, result["artifact_descriptor"])
+            if result.get("referee_report_descriptor"):
+                checked_path(project, result["referee_report_descriptor"])
+            descriptor = result["referee_packet_descriptor"]
+            packet = json.loads(checked_path(project, descriptor).read_text(encoding="utf-8"))
+            check_review_inputs(project, checkpoint, packet, descriptor)
+            return finish({**result, "reused_completed_result": True, "prepare_only": args.prepare_only})
+    if checkpoint["phase"] == "awaiting-evidence":
+        if not new_evidence and not args.prepare_only:
+            request = checkpoint["evidence_request"]
+            return finish({
+                "status": "needs-evidence", "requested_capability": request["capability"],
+                "obstruction": request["missing_artifact"], "evidence_request": request,
+                "reason": "No new or explicitly updated reference was supplied; the pending route is preserved.",
+            })
+        checkpoint["phase"] = checkpoint["resume_phase"]
+        checkpoint["evidence_request"] = None
+    if checkpoint["phase"] == "exact-obstruction":
+        if not new_evidence and not args.prepare_only:
+            return finish(checkpoint["result"] or {"status": "exact-obstruction"})
+        checkpoint["phase"] = "replan"
+    persist()
 
-    if args.hard_exploration:
-        exploration = run_hard_exploration(
-            args, project, loop_dir, retired_routes, started
-        )
-        if exploration["status"] != "selected":
-            return write_summary(
-                loop_dir,
-                {
-                    **exploration,
-                    "run_id": loop_id,
-                    "iterations_completed": 0,
-                },
-            )
-        stable_plan = exploration["plan"]
+    try:
+        if args.hard_exploration and checkpoint["stable_plan"] is None and checkpoint["pending_candidate"] is None:
+            exploration = run_hard_exploration(args, project, loop_dir, retired_routes, started, on_call=charge_call)
+            if exploration["status"] != "selected":
+                if exploration["status"] == "needs-evidence":
+                    return await_evidence(exploration["requested_capability"], {}, exploration["obstruction"], "solve")
+                return finish(exploration)
+            checkpoint["stable_plan"] = exploration["plan"]
+            persist()
 
-    for iteration in range(1, args.max_iterations + 1):
-        if time.monotonic() - started >= args.max_wall_seconds:
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "budget-exhausted",
-                    "run_id": loop_id,
-                    "iterations_completed": iteration - 1,
-                    "reason": "wall-time budget exhausted",
-                },
-            )
-        search_enabled = search_next
-        search_next = False
-        run_dir, packet, command = prepare_generation(
-            args,
-            project,
-            loop_dir,
-            iteration,
-            mode,
-            feedback,
-            previous_candidate,
-            retired_routes,
-            search_enabled,
-            stable_plan,
-        )
-        if args.prepare_only:
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "prepared",
-                    "run_id": loop_id,
-                    "run_dir": str(run_dir),
-                    "packet_sha256": sha256_file(run_dir / "packet.json"),
-                    "command": command,
-                },
-            )
+        for iteration in range(1, args.max_iterations + 1):
+            if remaining() <= 0:
+                return finish({"status": "budget-exhausted", "reason": "wall-time budget exhausted"})
+            phase = checkpoint["phase"]
+            if phase == "verify":
+                pending = checkpoint["pending_candidate"]
+                if not pending:
+                    raise ValueError("verification checkpoint has no candidate")
+                generation = pending["generation"]
+                candidate_path = checked_path(project, pending["artifact"])
+            else:
+                search_enabled = bool(checkpoint.get("search_next")) and args.allow_search
+                run_dir, _, command = prepare_generation(
+                    args, project, loop_dir, iteration, phase,
+                    checkpoint["referee_feedback"], checkpoint["previous_candidate"],
+                    retired_routes, search_enabled, checkpoint["stable_plan"],
+                )
+                if args.prepare_only:
+                    return finish({"status": "prepared", "run_dir": str(run_dir),
+                                   "packet_sha256": sha256_file(run_dir / "packet.json"), "command": command})
+                if search_enabled:
+                    checkpoint.update(search_used=True, search_next=False)
+                checkpoint["usage"]["iterations"] += 1
+                checkpoint["usage"]["agent_calls"] += 1
+                persist()
+                run_command(command, run_dir, min(args.generator_timeout, max(1, remaining())))
+                generation = load_generation(run_dir)
+                signature = route_signature(generation)
+                record_generation(project, generation, signature, generation["status"])
 
-        remaining = args.max_wall_seconds - (time.monotonic() - started)
-        if remaining <= 0:
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "budget-exhausted",
-                    "run_id": loop_id,
-                    "iterations_completed": iteration - 1,
-                    "reason": "wall-time budget exhausted before generation",
-                },
-            )
-        run_command(command, run_dir, min(args.generator_timeout, max(1, int(remaining))))
-        generation = load_generation(run_dir)
-        signature = route_signature(generation)
-        record_generation(project, generation, signature, generation["status"])
+                if signature in retired_routes:
+                    checkpoint.update(phase="replan", stable_plan=None, previous_candidate=None,
+                                      repair_origin_signature=None, pending_candidate=None,
+                                      referee_feedback={"verdict": "blocked", "failure_kind": "strategy",
+                                          "first_error": {"location": generation["proof_kernel"],
+                                              "issue": "This exact route was retired for the current theorem revision; change its mechanism or supply an explicit theorem repair."}})
+                    persist()
+                    continue
 
-        if generation["status"] == "blocked":
-            capability = generation["requested_capability"]
-            origin_signature = (
-                repair_origin_signature
-                if mode == "repair" and repair_origin_signature
-                else signature
-            )
-            origin_candidate = (
-                previous_candidate
-                if mode == "repair" and previous_candidate is not None
-                else generation
-            )
-            if (
-                capability == "retrieval"
-                and args.allow_search
-                and not search_used
-                and iteration < args.max_iterations
-            ):
-                if mode == "repair":
-                    retired_routes[origin_signature] = route_record(
-                        origin_candidate,
-                        origin_signature,
-                        generation["obstruction"],
-                    )
-                search_used = True
-                search_next = True
-                mode = "replan"
-                feedback = {
-                    "verdict": "blocked",
-                    "failure_kind": "missing-packet-evidence",
-                    "first_error": {
-                        "location": generation["proof_kernel"],
-                        "issue": generation["obstruction"],
-                    },
-                    "requested_capability": "retrieval",
+                if generation["status"] == "blocked":
+                    capability = generation["requested_capability"]
+                    if capability == "retrieval" and args.allow_search and not checkpoint["search_used"]:
+                        checkpoint["search_next"] = True
+                        checkpoint["referee_feedback"] = {
+                            "verdict": "blocked", "failure_kind": "missing-packet-evidence",
+                            "first_error": {"location": generation["proof_kernel"], "issue": generation["obstruction"]},
+                        }
+                        # Retrieval does not invalidate the selected plan or consume a local repair.
+                        persist()
+                        if iteration < args.max_iterations:
+                            continue
+                        return finish({"status": "budget-exhausted", "reason": "retrieval turn pending in checkpoint"})
+                    if capability == "new-representation":
+                        origin = checkpoint["previous_candidate"] or generation
+                        origin_signature = checkpoint["repair_origin_signature"] or signature
+                        retire(origin, origin_signature, generation["obstruction"])
+                        checkpoint.update(phase="replan", stable_plan=None, previous_candidate=None,
+                                          repair_origin_signature=None, pending_candidate=None,
+                                          referee_feedback={"verdict": "blocked", "failure_kind": "strategy",
+                                              "first_error": {"location": generation["proof_kernel"], "issue": generation["obstruction"]}})
+                        persist()
+                        continue
+                    if capability != "none":
+                        return await_evidence(capability, generation, generation["obstruction"], phase)
+                    checkpoint["phase"] = "exact-obstruction"
+                    checkpoint["result"] = {"status": "exact-obstruction", "obstruction": generation["obstruction"],
+                                             "proof_kernel": generation["proof_kernel"]}
+                    return finish(checkpoint["result"])
+
+                candidate_path = write_candidate(project, loop_id, iteration, generation)
+                checkpoint["pending_candidate"] = {
+                    "generation": generation, "artifact": local_descriptor(project, candidate_path),
+                    "generated_in_phase": phase,
                 }
-                previous_candidate = None
-                repair_origin_signature = None
-                stable_plan = None
-                continue
-            if capability == "new-representation" and iteration < args.max_iterations:
-                retired_routes[origin_signature] = route_record(
-                    origin_candidate, origin_signature, generation["obstruction"]
-                )
-                record_retirement(
-                    project,
-                    origin_candidate,
-                    origin_signature,
-                    generation["obstruction"],
-                )
-                mode = "replan"
-                feedback = {
-                    "verdict": "blocked",
-                    "failure_kind": "strategy",
-                    "first_error": {
-                        "location": generation["proof_kernel"],
-                        "issue": generation["obstruction"],
-                    },
+                checkpoint["phase"] = "verify"
+                persist()
+
+            signature = route_signature(generation)
+            r_args = referee_args(args, project, candidate_path, generation["candidate_kind"])
+            referee_dir, referee_packet, referee_command = prepare_referee(r_args)
+            packet_descriptor = local_descriptor(project, referee_dir / "packet.json")
+            check_review_inputs(project, checkpoint, referee_packet, packet_descriptor)
+            if args.prepare_only:
+                return finish({"status": "prepared-verification", "run_dir": str(referee_dir), "command": referee_command})
+            if remaining() <= 0:
+                return finish({"status": "budget-exhausted", "reason": "verification pending in checkpoint", "candidate": str(candidate_path)})
+            r_args.timeout = min(args.referee_timeout, max(1, remaining()))
+            checkpoint["usage"]["agent_calls"] += 1
+            persist()
+            verdict = run_referee(r_args, referee_dir, referee_command)
+            # A verdict cannot accept or retire a route after its inputs change.
+            check_review_inputs(project, checkpoint, referee_packet, packet_descriptor)
+            action, capability = referee_action(verdict)
+            if action == "accept":
+                kind = generation["candidate_kind"]
+                final_name = "referee_accepted_proof.md" if kind == "proof" else "referee_accepted_counterexample.md"
+                final_path = project / "writeup" / final_name
+                final_path.write_text(referee_packet["candidate_proof"], encoding="utf-8")
+                proof_status = "referee-accepted"
+                evidence_summary = {
+                    "disposition": kind, "basis": "model-referee", "scope": "whole-candidate",
+                    "human_reviewed": False, "formal_verification": False,
+                    "claim_sha256": checkpoint["claim_sha256"], "claim_revision": checkpoint["claim_revision"],
+                    "acceptance_contract_sha256": checkpoint["acceptance_contract_sha256"],
+                    "referee_packet_sha256": packet_descriptor["sha256"],
+                    "candidate_sha256": sha256_file(final_path),
                 }
-                previous_candidate = None
-                repair_origin_signature = None
-                stable_plan = None
-                continue
-            status = "needs-evidence" if capability != "none" else "exact-obstruction"
-            return write_summary(
-                loop_dir,
-                {
-                    "status": status,
-                    "run_id": loop_id,
-                    "iterations_completed": iteration,
-                    "requested_capability": capability,
-                    "obstruction": generation["obstruction"],
-                    "proof_kernel": generation["proof_kernel"],
-                    "route_family": generation["route_family"],
-                },
-            )
-
-        candidate_path = write_candidate(project, loop_id, iteration, generation)
-        r_args = referee_args(
-            args,
-            project,
-            candidate_path,
-            generation["candidate_kind"],
-        )
-        referee_dir, _, referee_command = prepare_referee(r_args)
-        remaining = args.max_wall_seconds - (time.monotonic() - started)
-        if remaining <= 0:
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "budget-exhausted",
-                    "run_id": loop_id,
-                    "iterations_completed": iteration,
-                    "reason": "wall-time budget exhausted before referee",
-                    "candidate": str(candidate_path),
-                },
-            )
-        r_args.timeout = min(args.referee_timeout, max(1, int(remaining)))
-        verdict = run_referee(r_args, referee_dir, referee_command)
-
-        if verdict.get("verdict") == "correct":
-            final_name = (
-                "referee_accepted_proof.md"
-                if generation["candidate_kind"] == "proof"
-                else "referee_accepted_counterexample.md"
-            )
-            final_path = project / "writeup" / final_name
-            shutil.copyfile(candidate_path, final_path)
-            proof_status = (
-                "human-proof"
-                if generation["candidate_kind"] == "proof"
-                else "refuted"
-            )
-            final_artifact = str(final_path.relative_to(project))
-            current_state = ensure_runtime(project)
-            if (
-                current_state.get("proof_status") != proof_status
-                or current_state.get("current_node") != "main theorem"
-                or current_state.get("last_decisive_artifact") != final_artifact
-            ):
-                update_state(
-                    project,
-                    proof_status=proof_status,
-                    current_node="main theorem",
-                    last_decisive_artifact=final_artifact,
-                )
-            append_record(
-                project,
-                "events",
-                {
-                    "event_type": "proof_loop_referee_accepted",
-                    "run_id": loop_id,
-                    "candidate_kind": generation["candidate_kind"],
-                    "artifact": str(final_path.relative_to(project)),
-                },
-            )
-            if generation["candidate_kind"] == "refutation":
-                append_record(
-                    project,
-                    "counterexamples",
-                    {
-                        "event_type": "proof_loop_refutation",
-                        "claim_id": "main theorem",
-                        "status": "refuted",
-                        "witness": str(final_path.relative_to(project)),
-                        "artifact_sha256": sha256_file(final_path),
+                current_state = ensure_runtime(project)
+                final_artifact = str(final_path.relative_to(project))
+                if (current_state.get("proof_status"), current_state.get("current_node"),
+                    current_state.get("last_decisive_artifact"), current_state.get("evidence_summary")) != (
+                    proof_status, "main theorem", final_artifact, evidence_summary
+                ):
+                    update_state(project, proof_status=proof_status, current_node="main theorem",
+                                 last_decisive_artifact=final_artifact, evidence_summary=evidence_summary)
+                append_record(project, "events", {
+                    "event_type": "proof_loop_referee_accepted", "run_id": loop_id,
+                    "candidate_kind": kind, "artifact": str(final_path.relative_to(project)),
+                })
+                if kind == "refutation":
+                    append_record(project, "counterexamples", {
+                        "event_type": "proof_loop_refutation", "claim_id": "main theorem", "status": "referee-accepted",
+                        "witness": str(final_path.relative_to(project)), "artifact_sha256": sha256_file(final_path),
                         "referee_report": str(referee_dir / "verification.json"),
-                    },
-                )
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "referee-accepted",
-                    "run_id": loop_id,
-                    "iterations_completed": iteration,
-                    "candidate_kind": generation["candidate_kind"],
-                    "proof_status": proof_status,
-                    "artifact": str(final_path),
+                    })
+                result = {
+                    "status": "referee-accepted", "candidate_kind": kind, "proof_status": proof_status,
+                    "artifact": str(final_path), "artifact_descriptor": local_descriptor(project, final_path),
                     "referee_report": str(referee_dir / "verification.json"),
-                    "formal_verification": False,
-                },
-            )
+                    "referee_report_descriptor": local_descriptor(project, referee_dir / "verification.json"),
+                    "referee_packet_descriptor": packet_descriptor,
+                    "formal_verification": False, "evidence_summary": evidence_summary,
+                }
+                checkpoint.update(phase="complete", result=result)
+                return finish(result)
 
-        rejection = compact_feedback(verdict)
-        append_record(
-            project,
-            "attempts",
-            {
-                "event_type": "proof_loop_rejection",
-                "route_family": generation["route_family"] or "unnamed route",
-                "target_lemma": generation["proof_kernel"] or "full theorem",
-                "outcome": str(verdict.get("verdict", "uncertain")),
+            rejection = compact_feedback(verdict)
+            append_record(project, "attempts", {
+                "event_type": "proof_loop_rejection", "route_family": generation["route_family"] or "unnamed route",
+                "target_lemma": generation["proof_kernel"] or "full theorem", "outcome": verdict.get("verdict", "uncertain"),
                 "central_object": generation["central_object"],
-                "failure_witness": json.dumps(
-                    verdict.get("first_error", {}), ensure_ascii=False, sort_keys=True
-                ),
-                "route_signature": signature,
-                "failure_kind": str(verdict.get("failure_kind", "unknown")),
-            },
-        )
+                "failure_witness": json.dumps(verdict.get("first_error", {}), ensure_ascii=False, sort_keys=True),
+                "route_signature": signature, "signature_version": 2, "failure_kind": verdict.get("failure_kind", "unknown"),
+            })
+            checkpoint["referee_feedback"] = rejection
+            if action == "runtime-error":
+                return finish({"status": "runtime-error", "obstruction": verdict.get("first_error"), "candidate": str(candidate_path)})
+            if action == "awaiting-evidence":
+                return await_evidence(capability or "independent-review", generation, verdict.get("first_error"), "verify")
 
-        if verdict.get("verdict") == "uncertain" or verdict.get("failure_kind") in {
-            "missing-packet-evidence",
-            "tool-evidence-gap",
-        }:
-            return write_summary(
-                loop_dir,
-                {
-                    "status": "needs-evidence",
-                    "run_id": loop_id,
-                    "iterations_completed": iteration,
-                    "requested_capability": "retrieval",
-                    "obstruction": verdict.get("first_error"),
-                    "candidate": str(candidate_path),
-                    "referee_report": str(referee_dir / "verification.json"),
-                },
-            )
+            origin_signature = checkpoint["repair_origin_signature"]
+            used_repair = checkpoint["pending_candidate"]["generated_in_phase"] == "repair"
+            if action == "replan" or used_repair or signature in checkpoint["repaired_routes"]:
+                origin = checkpoint["previous_candidate"] or generation
+                retire(origin, origin_signature or signature, json.dumps(verdict.get("first_error", {}), ensure_ascii=False))
+                if checkpoint["stable_plan"]:
+                    plan = checkpoint["stable_plan"]
+                    retire({**plan, "proof_kernel": plan["key_original_step"]}, plan["route_signature"], "The committed plan requires replanning after the recorded first error.")
+                checkpoint.update(phase="replan", stable_plan=None, previous_candidate=None,
+                                  repair_origin_signature=None, pending_candidate=None)
+            else:
+                checkpoint["repaired_routes"].append(signature)
+                checkpoint.update(phase="repair", previous_candidate=generation,
+                                  repair_origin_signature=signature, pending_candidate=None)
+            persist()
 
-        if mode == "repair" and repair_origin_signature:
-            origin_candidate = previous_candidate or generation
-            retired_routes[repair_origin_signature] = route_record(
-                origin_candidate,
-                repair_origin_signature,
-                json.dumps(verdict.get("first_error", {}), ensure_ascii=False, sort_keys=True),
-            )
-            mode = "replan"
-            feedback = rejection
-            previous_candidate = None
-            repair_origin_signature = None
-            stable_plan = None
-            continue
-
-        already_failed = signature in retired_routes
-        if not already_failed and signature not in repaired_routes:
-            repaired_routes.add(signature)
-            repair_origin_signature = signature
-            mode = "repair"
-            feedback = rejection
-            previous_candidate = generation
-        else:
-            retired_routes[signature] = route_record(
-                generation,
-                signature,
-                json.dumps(verdict.get("first_error", {}), ensure_ascii=False, sort_keys=True),
-            )
-            mode = "replan"
-            feedback = rejection
-            previous_candidate = None
-            repair_origin_signature = None
-            stable_plan = None
-
-    return write_summary(
-        loop_dir,
-        {
-            "status": "budget-exhausted",
-            "run_id": loop_id,
-            "iterations_completed": args.max_iterations,
-            "reason": "iteration budget exhausted",
-            "last_feedback": feedback,
-        },
-    )
+        return finish({"status": "budget-exhausted", "reason": "iteration grant exhausted", "last_feedback": checkpoint["referee_feedback"]})
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
+        # A failed process never becomes evidence against the mathematical route.
+        return finish({"status": "runtime-error", "obstruction": str(exc), "pending_action_preserved": True})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1482,6 +1621,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generator-timeout", type=int, default=1200)
     parser.add_argument("--referee-timeout", type=int, default=1200)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--fresh-attempt", action="store_true", help="start a new attempt while retaining scoped failure history and cumulative cost")
     parser.add_argument("--allow-search", action="store_true")
     parser.add_argument(
         "--hard-exploration",
@@ -1493,8 +1633,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument(
         "--reasoning-effort",
-        choices=["low", "medium", "high", "xhigh", "max"],
-        default="high",
+        choices=["low", "medium", "high", "xhigh", "max", "ultra"],
+        default=None,
     )
     parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", "codex"))
     return parser

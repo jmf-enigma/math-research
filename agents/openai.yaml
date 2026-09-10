@@ -1,6 +1,6 @@
 interface:
-  display_name: "Theory Proof Workbench"
+  display_name: "Math Research"
   short_description: "Find a natural route, verify it, and recover hard proofs"
-  default_prompt: "Use $theory-proof-workbench. Preserve the exact claim, try one mathematically motivated route end to end, escalate only a named obstruction, use bounded hard exploration only after two distinct route failures, and send complete candidates to an independent verifier."
+  default_prompt: "Use $math-research. Preserve the exact claim and find its controlling mathematical object. If that object is missing, choose one high-leverage discovery move instead of generic brainstorming. Carry one motivated route end to end, justify representation maps, resume from checked work, and report complete candidates with their evidence scope."
 policy:
   allow_implicit_invocation: true

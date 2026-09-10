@@ -152,7 +152,7 @@ Treat attempts with the same goal, assumptions, central object, and failure witn
 If there are several fingerprints or the match is ambiguous, run:
 
 ```bash
-codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/theory-proof-workbench/scripts/check_attempt.py" . --route-family "ROUTE" --central-object "OBJECT" --target-lemma "LEMMA" --failure-witness "WITNESS"
+codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/check_attempt.py" . --route-family "ROUTE" --central-object "OBJECT" --target-lemma "LEMMA" --failure-witness "WITNESS"
 ```
 
 ## Route Candidate Board
@@ -1120,7 +1120,7 @@ Do not admit the split when the parent assembly or a required child's exact use 
 When a lemma becomes reusable, create a lemma card:
 
 ```bash
-codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/theory-proof-workbench/scripts/new_lemma_card.py" "LEMMA NAME" --statement "STATEMENT"
+codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/new_lemma_card.py" "LEMMA NAME" --statement "STATEMENT"
 ```
 """
 
@@ -1150,7 +1150,7 @@ Use this directory for reusable local proof moves extracted from papers, appendi
 Create a card only when the trick changes the next proof move:
 
 ```bash
-codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/theory-proof-workbench/scripts/new_trick_card.py" "TRICK NAME" --project . --source "SOURCE" --shape "PROBLEM SHAPE" --obstruction "OBSTRUCTION"
+codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/new_trick_card.py" "TRICK NAME" --project . --source "SOURCE" --shape "PROBLEM SHAPE" --obstruction "OBSTRUCTION"
 ```
 
 Status values:

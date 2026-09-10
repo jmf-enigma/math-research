@@ -58,7 +58,9 @@ After rejection, classify the first error before acting.
 | Claim mismatch or silent assumption | Restore the original statement and replan |
 | Central lemma false or unsupported | Retire or replace the central mechanism |
 | Assembly gap | Preserve independent lemmas, rebuild only the dependency path |
-| Missing packet evidence | Retrieve or replay that evidence; do not treat uncertainty as refutation |
+| Missing source premise | Retrieve the exact source and check its assumptions |
+| Missing or stale tool evidence | Replay the named certificate; preserve the candidate and resume verification |
+| Referee process failure | Restore verification of the same candidate; no mathematical failure is recorded |
 
 One local repair is allowed while the same central mechanism survives. A second rejection at the same proof state requires a fresh representation or route.
 
@@ -75,6 +77,6 @@ Otherwise continue mathematical discovery. Repeatedly verifying speculative frag
 
 ## Promotion Boundary
 
-A referee-accepted natural-language proof is `human-proof`. An exact replayed CAS or solver artifact is `tool-checked` only for its encoded claim. A Lean lemma is `formalized-local` until the exact parent theorem is assembled and replayed. Never promote one status into another by wording alone.
+A model-accepted candidate is `referee-accepted`; its recorded disposition may be proof or refutation, while human review and formal verification remain false. An exact replayed CAS or solver artifact is `tool-checked` only for its encoded claim. A Lean lemma is `formalized-local` until the exact parent theorem is assembled and replayed. Outcome, evidence basis, and scope are separate; never promote by wording alone.
 
 Use `scripts/run_referee.py` for the fresh-context packet and `scripts/proof_loop.py` for bounded generation, first-error repair, and replanning.

@@ -67,6 +67,8 @@ Useful normal forms include telescoping gaps, add-and-subtract benchmarks, conve
 
 Discard the representation if it does not make the recorded obstruction smaller or more checkable.
 
+Make the bridge explicit: state the map, admissible image, and return implication needed by the parent. A lifting need not be bijective, and a relaxation need not be equivalent. For a failed recursive construction, isolate the operation that breaks closure and try one extra invariant or coordinate that makes the induction valid. See [representation-witness.md](representation-witness.md) when this step is nontrivial.
+
 ### Small cases and pattern discovery
 
 Compute or derive the smallest cases to guess an exact formula, threshold, active set, coefficient pattern, hard instance, or invariant. Keep at least one holdout case that was not used to guess the pattern.
@@ -84,6 +86,42 @@ Search one close theorem family when the missing ingredient may already exist. E
 - one local check that would validate the migration.
 
 Do not force the current problem into a theorem with stronger hypotheses before understanding why those hypotheses were needed.
+
+## High-Leverage Moves
+
+These moves recover structure when the compact lenses identify the obstruction but not the bridge. Select one. Do not run the whole menu.
+
+### Certificate-first backward design
+
+Write the conditions of an independently checkable certificate before deriving it. Start from the conclusion and tight case, then ask what dual variables, Bellman inequalities, deviation potentials, coupling, flow, Lyapunov function, or hard-instance separation would certify it. Solve backward for the simplest object satisfying those conditions. Reject it when any certificate condition is as hard as the original theorem or has no exact check.
+
+### Local-to-global upgrade
+
+Find the smallest local move and name the theorem that globalizes it. Typical pairs are exchange improvement plus termination, derivative sign plus convexity or single crossing, one-step deviation plus Bellman recursion or induction, and local incentive inequalities plus an envelope or no-positive-cycle argument. A local fact without a valid globalizer is not a route.
+
+### Abstraction-refinement and bottom-up synthesis
+
+Start with the smallest faithful model, not merely the easiest one. Prove or refute at most two special cases or auxiliary facts, then ask what shared invariant, obstruction, or strengthening explains both. Refine only the missing feature, such as a boundary state, dependence, tie-breaking, information, or an extra action. Toy cases generate the next lemma; they never establish the full theorem by themselves.
+
+### Equality-driven construction and algebra
+
+When an object or manipulation must be invented:
+
+1. Freeze the equality, zero-slack, boundary, symmetry, dimensional, and support conditions it must satisfy.
+2. Choose the smallest ansatz compatible with those conditions.
+3. Determine unknown coefficients, thresholds, or active sets from binding equations or seed cases.
+4. Reserve a holdout case, then compute the exact residual rather than only comparing values.
+5. Factor, telescope, dualize, symmetrize, or sign-decompose the residual; let that normal form state the real lemma.
+
+Reject the construction if its residual simply restates the target, if it only interpolates the seed cases, or if it cannot explain the tight example.
+
+### Proof-move migration and trick replay
+
+Import a move through its dependency signature: required inputs and assumptions, transformation, produced artifact, verifier, and failure mode. Re-derive the move in the current notation and replay its applicability check. Similar prose, theorem names, or diagrams are not enough. Keep a useful move local; create a durable trick card only after it changes a real route and survives an independent replay or held-out problem shape.
+
+### Theorem repair
+
+When a route almost works, isolate the first missing condition. Seek the weakest extra assumption or the strongest defensible weaker conclusion, such as existence instead of uniqueness, monotone selection instead of strict monotonicity, or an approximation instead of exact optimality. Mark the original theorem false, conditional, or still open before proving the repaired statement.
 
 ## Domain Seeds
 

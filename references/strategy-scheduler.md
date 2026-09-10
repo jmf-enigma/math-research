@@ -1,6 +1,6 @@
 # Strategy Scheduler
 
-Use this file to choose the next proof route after classification or failure.
+Use this file only when genuinely competing routes or repeated failure require scheduling. The natural proof loop remains the default; the sections below are conditional alternatives.
 
 ## Map
 
@@ -37,7 +37,7 @@ Use this file to choose the next proof route after classification or failure.
 
 ## Portfolio Routes
 
-Run at least two routes for a hard proof unless one route cleanly proves or refutes the claim.
+Keep one route on the first serious attempt. After two materially different failures, or a serious attempt with no central object, compare at most two motivated routes. A difficult theorem alone is not a requirement to open a portfolio.
 
 - Direct theorem route: match assumptions to a named theorem and verify every condition.
 - Contradiction route: assume failure and derive violation of optimality, IC, monotonicity, or concentration event.
@@ -50,7 +50,7 @@ Run at least two routes for a hard proof unless one route cleanly proves or refu
 
 ## Diversity Control
 
-For a hard problem, separate independent route seeding from later synthesis.
+When the portfolio trigger above is met, separate independent route seeding from later synthesis.
 
 - Give each initial seed only the theorem fence, allowed prior results, and output contract. Do not preload the current favorite, a persuasive failed sketch, or another seed's narrative.
 - Require one compact route card from each seed: mathematical mechanism, central object, proof kernel, expected artifact, and cheapest falsifier or evaluator.

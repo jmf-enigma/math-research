@@ -2,6 +2,8 @@
 
 Use this file only to maintain the skill, diagnose a repeatedly failed proof, or choose a project-mode escalation. Do not load it during an ordinary first proof attempt.
 
+The [2026-09-10 source update](ai-math-workflows-2026.md) adds recent proof workflows and mathematical-discovery case studies, with exact versions, reading scope, limits, and implementation links. It supplements the earlier inventory below.
+
 The papers below contribute decision rules, evidence boundaries, and conditional modules. They do not form one mandatory workflow. The main imported capability is choosing the right stage transition: continue the mathematics, retrieve one missing premise, run one decisive computation, repair one local block, build a durable blueprint, or stop.
 
 ## Contents
@@ -60,7 +62,7 @@ Use one verdict: `import` when the mechanism is directly available and well supp
 4. **Escalate the first obstruction.** Do not search, formalize, compute, or parallelize in anticipation. Name the missing artifact first.
 5. **Search adaptively.** Following Rethlas, broad statement search, theorem reformulation, focused search, direct proof, and recursive proof are options rather than a fixed order. In the executable loop, retrieval is enabled for one turn only after the generator explicitly requests it. Inspect source context, definitions, assumptions, and proof technique, then make an independent derivation or falsification move.
 6. **Repair once.** Following APOLLO and compact-feedback systems, preserve a coherent skeleton and repair the earliest local error only when the central mechanism survives. The controller, not the model's renamed route label, owns the repair budget. A rejected repair retires the original route.
-7. **Use a cold whole-proof referee.** Give it the exact claim, candidate, selected premises, and necessary evidence. Require a concrete first error. Natural-language approval is advisory `human-proof`, not formal verification.
+7. **Use a cold whole-proof referee.** Give it the exact claim, candidate, selected premises, and necessary evidence. Require a concrete first error. Natural-language approval is `referee-accepted`; human review and formal verification are recorded separately.
 8. **Keep failure memory compact.** Store the frozen subgoal, route family, central object, first error or witness, and the new ingredient required for a legal retry. A notation change is not a new route.
 9. **Stop on state, not prose.** Stop or change representation after the same obstruction recurs without a new premise, certificate, witness, or smaller subgoal. Preserve checked prefixes and solved nodes, but do not polish a broken mechanism.
 

@@ -1,6 +1,6 @@
 # Proof State Machine
 
-Use this to keep a hard proof moving instead of looping.
+Use this for a durable project. States are available actions, not a mandatory sequence; direct proving may bypass stress tests, portfolios, or decomposition when they do not help.
 
 ## States
 
@@ -8,7 +8,7 @@ Use this to keep a hard proof moving instead of looping.
 - `S1-classify`: target type, direct-solve check, and candidate theorem families.
 - `S2-stress-test`: negation, edge cases, finite/numeric examples, relaxed assumptions.
 - `S2b-idea-map`: optional state for unclear or repeatedly failed proofs; propose failure world, small-case pattern guess, central object, proof kernel, central lemma, and verification hook.
-- `S3-route-portfolio`: at least two plausible proof routes with switch rules, including one incompatible shadow family while the leading kernel remains unresolved.
+- `S3-route-choice`: one motivated route by default; a bounded portfolio only after the hard-exploration trigger in SKILL.md.
 - `S4-lemma-graph`: theorem reduced to a blueprint-style dependency graph of definitions, lemmas, and theorem assembly nodes with statement dependencies, proof dependencies, downstream use, and statuses.
 - `S5-local-certification`: check fragile lemmas with tools, known theorems, one-step proof-state feedback, or the prover-verifier move contract; retain any independently verified prefix or helper artifact.
 - `S6-assembly`: combine lemmas into the exact target statement.
@@ -21,8 +21,8 @@ Use this to keep a hard proof moving instead of looping.
 - `S0 -> S1`: all variables, domains, quantifiers, assumptions, acceptance items, semantic obligations, and the no-silent-statement-change rule are explicit.
 - `S1 -> S2`: at least one theorem family or proof route is plausible.
 - `S1 -> S8`: direct theorem, certificate, contradiction, or known decomposition proves the claim and verification gates pass.
-- `S2 -> refuted`: counterexample found.
-- `S2 -> S3`: no counterexample found and assumptions look coherent.
+- `S2 -> refuted`: an explicit witness is checked against the original assumptions and conclusion; an encoding or child-lemma counterexample has only that local scope.
+- `S2 -> S3`: select one route; no counterexample found is a search signal, not proof evidence.
 - `S2 -> S2b`: no obvious central route or the same obstruction has appeared before.
 - `S2b -> S3`: one proof kernel or candidate central lemma has a verification hook; if an unknown construction or answer is required, it has passed a holdout/self-check.
 - `S3 -> S4`: route has a proof skeleton whose proposed children pass parent sufficiency, strict simplification, acyclicity, fidelity, repair-radius, and premise-feasibility checks.

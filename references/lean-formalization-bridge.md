@@ -1,6 +1,6 @@
 # Lean Formalization Bridge
 
-Use this protocol when a Theory Proof Workbench node is mathematically stable enough to formalize. The bridge records an immutable request and a replayable Lean result; it does not turn Lean compilation into evidence for an unencoded or incompletely assembled theorem.
+Use this protocol when a Math Research node is mathematically stable enough to formalize. The bridge records an immutable request and a replayable Lean result; it does not turn Lean compilation into evidence for an unencoded or incompletely assembled theorem.
 
 ## Escalation Gate
 
@@ -12,7 +12,7 @@ Send a node to Lean only when it has:
 - a namespace-qualified Lean target and declaration kind;
 - no unresolved semantic ambiguity that Lean would merely encode.
 
-Keep discovery in Theory Workbench when the statement, central object, construction, or mathematical route is still moving.
+Keep discovery in Math Research when the statement, central object, construction, or mathematical route is still moving.
 
 ## Vocabulary Gate
 
@@ -23,7 +23,7 @@ When a prover edits a proof, replay it against the frozen original declaration r
 ## Prepare A Request
 
 ```bash
-codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/theory-proof-workbench/scripts/lean_bridge.py" prepare PROJECT \
+codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/lean_bridge.py" prepare PROJECT \
   --node-id L3 \
   --role local-lemma \
   --statement-file lemmas/L3.md \
@@ -63,14 +63,14 @@ Activate this only when the theorem target is frozen, the proof skeleton is cohe
 5. Solve a validated child independently and recurse only when it is strictly simpler. Stop if the child is equivalent to its parent, the same failure fingerprint returns, or a bounded retry creates no proof-state delta.
 6. Reinsert only a verified child. Replay the original frozen target, scan for `sorry` and admitted or unexpected axioms, then rerun claim-fidelity, assumption-lineage, assembly-coverage, and axiom gates.
 
-`lean_bridge.py verify` writes this bounded repair policy into `formal_failure_surgery` when it classifies a first local-proof failure. A repeated identical local failure returns ownership to Theory Workbench rather than starting the same surgery again.
+`lean_bridge.py verify` writes this bounded repair policy into `formal_failure_surgery` when it classifies a first local-proof failure. A repeated identical local failure returns ownership to Math Research rather than starting the same surgery again.
 
 AXLE-style remote extraction and verification may be useful for a non-sensitive, standard single-file target when the user explicitly approves source sharing. Local checking remains the default. A remote pass cannot replace the bridge's claim-fidelity, assumption-lineage, assembly-coverage, or axiom gates, and a service limitation or stricter-verifier gap must be recorded in the result packet.
 
 ## Verify And Return
 
 ```bash
-codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/theory-proof-workbench/scripts/lean_bridge.py" verify PROJECT \
+codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/lean_bridge.py" verify PROJECT \
   lean/handoffs/REQUEST.request.json \
   --runner auto
 ```
@@ -85,8 +85,8 @@ Use `--failure-stage statement-fidelity`, `mathematical`, or `assembly` when Lea
 | --- | --- |
 | Exact target passes | Theory integrator assembles the verified node |
 | First parse, import, type, premise, or local proof failure | Lean formalizer repairs once |
-| Same failure class, site, and diagnostic fingerprint repeat | Theory Workbench retrieves, re-decomposes, or audits the statement |
-| Statement-fidelity, mathematical, or assembly failure | Theory Workbench immediately |
+| Same failure class, site, and diagnostic fingerprint repeat | Math Research retrieves, re-decomposes, or audits the statement |
+| Statement-fidelity, mathematical, or assembly failure | Math Research immediately |
 | Full theorem passes but an acceptance gate is missing | Theory integrator completes the audit; status stays below complete |
 
 `formalized-local` applies only to the checked node. Use `--promote-final` only for a `full-theorem` request after all four acceptance gates pass. A tampered request, stale claim revision, missing target, placeholder, target-encoding axiom, or incomplete acceptance report blocks promotion.

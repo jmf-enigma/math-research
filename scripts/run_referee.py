@@ -57,6 +57,12 @@ proof. Classify that first obstruction in `failure_kind`. Use `missing-packet-ev
 because the packet does not contain it. Reserve `wrong` for an invalid deduction, contradiction,
 counterexample, or other mathematical defect visible in the supplied material.
 
+Use `central-mechanism-failure` when the controlling lemma or construction fails, rather than
+treating it as repairable algebra. A counterexample to an auxiliary lemma or a mistranslated
+formal statement does not refute the original theorem. Check the translation and recovery map.
+When a representation changes, inspect the maps, their domains, boundary conditions, and the
+direction of implication actually needed by the parent theorem.
+
 Return `correct` only when the supplied candidate establishes its declared disposition, every
 acceptance obligation is covered, and both `critical_errors` and `gaps` are empty. Return JSON
 matching `verification.schema.json` and nothing else.
@@ -102,6 +108,7 @@ VERIFICATION_SCHEMA: dict[str, Any] = {
             "enum": [
                 "none",
                 "mathematical-error",
+                "central-mechanism-failure",
                 "missing-packet-evidence",
                 "claim-mismatch",
                 "assumption-gap",
@@ -378,6 +385,7 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
         problems.append("invalid or missing verdict")
     failure_kind = payload.get("failure_kind")
     allowed_failure_kinds = {
+        "central-mechanism-failure",
         "none",
         "mathematical-error",
         "missing-packet-evidence",
@@ -447,6 +455,13 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
         problems.append(
             "wrong verdict downgraded: unavailable packet or tool evidence is uncertainty, not a visible mathematical refutation"
         )
+    if verdict == "wrong":
+        if failure_kind in {"none", "referee-runtime"}:
+            problems.append("wrong verdict requires a mathematical failure kind")
+        if not str(first_error.get("location", "")).strip() or not str(
+            first_error.get("issue", "")
+        ).strip():
+            problems.append("wrong verdict requires a concrete first error and location")
     if problems:
         payload = dict(payload)
         payload["verdict"] = "uncertain"
@@ -507,6 +522,10 @@ def record_referee_failure(
 def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> dict[str, Any]:
     if args.timeout <= 0:
         raise ValueError("--timeout must be positive")
+    packet_path = run_dir / "packet.json"
+    packet_text = packet_path.read_text(encoding="utf-8")
+    packet_hash = sha256_text(packet_text)
+    packet = json.loads(packet_text)
     stdout_path = run_dir / "codex.stdout.log"
     stderr_path = run_dir / "codex.stderr.log"
     timed_out = False
@@ -523,6 +542,8 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
         except subprocess.TimeoutExpired:
             timed_out = True
             terminate_process_group(process)
+    if sha256_text(packet_path.read_text(encoding="utf-8")) != packet_hash:
+        raise ValueError("referee packet changed during review; pending verification must be repeated")
     if timed_out:
         record_referee_failure(
             args,
@@ -601,12 +622,12 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
         "ephemeral": True,
         "web_search": "disabled",
         "same_model_independence_is_not_formal_proof": True,
+        "packet_sha256": packet_hash,
         "validation_errors": controller_errors,
     }
     atomic_write_json(output_path, payload)
 
     project = project_path(args.project)
-    packet = json.loads((run_dir / "packet.json").read_text(encoding="utf-8"))
     append_record(
         project,
         "verification_reports",

@@ -10,6 +10,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+from proof_loop import (
+    generation_domain_seed_packet,
+    packet_retired_routes,
+    remember_retired_route,
+    scout_domain_seed_packet,
+    prior_untried_routes,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PROOF_LOOP = ROOT / "scripts" / "proof_loop.py"
@@ -159,6 +167,19 @@ elif output.name == "generation.json":
             "obstruction": "The same divisibility obligation survives unchanged.",
             "requested_capability": "new-representation",
         }
+    elif scenario == "expert_consultation":
+        payload = {
+            "status": "blocked",
+            "candidate_kind": "none",
+            "summary": "The equality cases determine constraints but not the missing construction.",
+            "route_family": "equality-driven construction",
+            "central_object": "a feasible extremal certificate",
+            "proof_kernel": "construct a certificate satisfying all boundary and coupling constraints",
+            "assumptions_used": ["the feasible region is nonempty"],
+            "candidate_markdown": "",
+            "obstruction": "Local tools can check a proposed certificate but do not suggest the missing ansatz.",
+            "requested_capability": "expert-consultation",
+        }
     else:
         bad = (scenario == "repair" and iteration == 1) or (
             scenario == "replan" and iteration <= 2
@@ -263,6 +284,41 @@ def run_scenario(
     return result
 
 
+def prepare_packet(root: Path, name: str, claim: str) -> tuple[dict, dict, str]:
+    project = root / name
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(PROOF_LOOP),
+            str(project),
+            "--claim",
+            claim,
+            "--prepare-only",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    result = (
+        json.loads(completed.stdout)
+        if completed.returncode == 0 and completed.stdout.strip()
+        else {}
+    )
+    run_dir = Path(result.get("run_dir", root / "missing-run"))
+    packet = (
+        json.loads((run_dir / "packet.json").read_text(encoding="utf-8"))
+        if (run_dir / "packet.json").is_file()
+        else {}
+    )
+    instructions = (
+        (run_dir / "AGENTS.md").read_text(encoding="utf-8")
+        if (run_dir / "AGENTS.md").is_file()
+        else ""
+    )
+    return result, packet, instructions
+
+
 def main() -> int:
     checks: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory(prefix="proof-loop-smoke-") as raw:
@@ -273,13 +329,104 @@ def main() -> int:
         codex.write_text(MOCK_CODEX, encoding="utf-8")
         codex.chmod(0o755)
 
+        prepared, prepared_packet, prepared_agents = prepare_packet(
+            root,
+            "domain-seed",
+            "In a discounted dynamic program, an optimal policy has a threshold structure.",
+        )
+        _, ambiguous_packet, _ = prepare_packet(
+            root,
+            "ambiguous-domain",
+            "A theorem combining a dynamic program and mechanism design.",
+        )
+        checks.append(
+            {
+                "name": "high-leverage-domain-seeds-reach-agent-packet",
+                "ok": prepared.get("status") == "prepared"
+                and prepared_packet.get("domain_seed", {}).get("playbook")
+                == "dp-proof-playbook.md"
+                and prepared_packet.get("domain_seed", {}).get("proof_effect") == "none"
+                and bool(
+                    prepared_packet.get("domain_seed", {}).get("central_object_hints")
+                )
+                and ambiguous_packet.get("domain_seed") == {}
+                and generation_domain_seed_packet(
+                    "In a discounted dynamic program, an optimal policy is threshold.",
+                    "repair",
+                    None,
+                )
+                == {}
+                and generation_domain_seed_packet(
+                    "In a discounted dynamic program, an optimal policy is threshold.",
+                    "solve",
+                    {"route_family": "fixed plan"},
+                )
+                == {}
+                and generation_domain_seed_packet(
+                    "In a discounted dynamic program, an optimal policy is threshold.",
+                    "replan",
+                    None,
+                ).get("playbook")
+                == "dp-proof-playbook.md"
+                and scout_domain_seed_packet(
+                    "In a discounted dynamic program, an optimal policy is threshold.",
+                    "structural",
+                ).get("playbook")
+                == "dp-proof-playbook.md"
+                and scout_domain_seed_packet(
+                    "In a discounted dynamic program, an optimal policy is threshold.",
+                    "adversarial",
+                )
+                == {}
+                and "certificate-first backward design" in prepared_agents
+                and "domain_seed" in prepared_agents,
+            }
+        )
+
+        retired_fixture = {
+            f"{index:064x}": {
+                "route_signature": f"{index:064x}",
+                "route_family": f"route-{index}",
+                "central_object": f"object-{index}",
+                "proof_kernel": f"kernel-{index}",
+                "failure": f"failure-{index}",
+            }
+            for index in range(20)
+        }
+        bounded_retired = packet_retired_routes(retired_fixture)
+        remember_retired_route(
+            retired_fixture,
+            f"{8:064x}",
+            {
+                "route_signature": f"{8:064x}",
+                "route_family": "route-8-refreshed",
+                "central_object": "object-8",
+                "proof_kernel": "kernel-8",
+                "failure": "failure-8-refreshed",
+            },
+        )
+        refreshed_retired = packet_retired_routes(retired_fixture)
+        checks.append(
+            {
+                "name": "retired-route-packet-context-is-bounded",
+                "ok": len(bounded_retired) == 12
+                and bounded_retired[0].get("route_family") == "route-8"
+                and bounded_retired[-1].get("route_family") == "route-19"
+                and len(refreshed_retired) == 12
+                and refreshed_retired[0].get("route_family") == "route-9"
+                and refreshed_retired[-1].get("route_family")
+                == "route-8-refreshed",
+            }
+        )
+
         accepted = run_scenario(root, codex, "accept", 2)
         checks.append(
             {
                 "name": "one-route-cold-referee-acceptance",
                 "ok": accepted.get("status") == "referee-accepted"
                 and accepted.get("iterations_completed") == 1
-                and accepted.get("proof_status") == "human-proof",
+                and accepted.get("proof_status") == "referee-accepted"
+                and accepted.get("evidence_summary", {}).get("human_reviewed") is False,
             }
         )
 
@@ -298,10 +445,11 @@ def main() -> int:
                 "name": "explicit-refutation-disposition",
                 "ok": refuted.get("status") == "referee-accepted"
                 and refuted.get("candidate_kind") == "refutation"
-                and refuted.get("proof_status") == "refuted"
+                and refuted.get("proof_status") == "referee-accepted"
+                and refuted.get("evidence_summary", {}).get("disposition") == "refutation"
                 and referee_packet.get("candidate_kind") == "refutation"
                 and any(
-                    json.loads(line).get("record", {}).get("status") == "refuted"
+                    json.loads(line).get("record", {}).get("status") == "referee-accepted"
                     for line in (
                         Path(refuted["project"])
                         / ".proof_runtime"
@@ -380,7 +528,7 @@ def main() -> int:
                 and retrieval.get("iterations_completed") == 2
                 and not retrieval_first.get("search_enabled")
                 and retrieval_second.get("search_enabled")
-                and retrieval_second.get("mode") == "replan",
+                and retrieval_second.get("mode") == "solve",
             }
         )
 
@@ -466,6 +614,16 @@ def main() -> int:
             }
         )
 
+        consulted = run_scenario(root, codex, "expert_consultation", 2)
+        checks.append(
+            {
+                "name": "expert-consultation-is-an-outer-evidence-request",
+                "ok": consulted.get("status") == "needs-evidence"
+                and consulted.get("requested_capability") == "expert-consultation"
+                and consulted.get("iterations_completed") == 1,
+            }
+        )
+
         hard = run_scenario(
             root, codex, "hard_exploration", 2, hard_exploration=True
         )
@@ -478,6 +636,10 @@ def main() -> int:
         scout_packets = [
             json.loads(path.read_text(encoding="utf-8"))
             for path in sorted((hard_root / "hard-exploration").glob("scout-*/packet.json"))
+        ]
+        scout_instructions = [
+            path.read_text(encoding="utf-8")
+            for path in sorted((hard_root / "hard-exploration").glob("scout-*/AGENTS.md"))
         ]
         hard_generation = json.loads(
             (hard_root / "iteration-01" / "packet.json").read_text(encoding="utf-8")
@@ -499,6 +661,13 @@ def main() -> int:
                 and len(scout_packets) == 2
                 and all(packet.get("independent_context") for packet in scout_packets)
                 and all("candidates" not in packet for packet in scout_packets)
+                and any(
+                    packet.get("scout_role", {}).get("name") == "adversarial"
+                    and packet.get("domain_seed") == {}
+                    for packet in scout_packets
+                )
+                and all("exact residual" in text for text in scout_instructions)
+                and all("domain_seed" in text for text in scout_instructions)
                 and hard_generation.get("stable_plan", {}).get("key_original_step")
                 == "write the even member as twice an integer"
                 and (
@@ -525,28 +694,14 @@ def main() -> int:
             / "proof_loop_runs"
             / revisited["run_id"]
         )
-        revisited_plan = json.loads(
-            (
-                revisit_root
-                / "hard-exploration"
-                / "selected_plan.json"
-            ).read_text(encoding="utf-8")
-        )
         checks.append(
             {
-                "name": "deferred-route-pool-revisits-without-repeating-selected-plan",
-                "ok": revisited.get("status") == "needs-evidence"
-                and len(
-                    list(
-                        (revisit_root / "hard-exploration").glob(
-                            "scout-*/scout.json"
-                        )
-                    )
-                )
-                == 1
-                and revisited_plan.get("source") == "historical-untried-route"
-                and revisited_plan.get("key_original_step")
-                == "show one of the two residues is zero",
+                "name": "completed-proof-is-reused-with-untried-history-preserved",
+                "ok": revisited.get("status") == "referee-accepted"
+                and revisited.get("reused_completed_result") is True
+                and not (revisit_root / "hard-exploration").exists()
+                and revisited["cumulative_usage"]["agent_calls"] == hard["cumulative_usage"]["agent_calls"]
+                and len(prior_untried_routes(Path(revisited["project"]))) == 1,
             }
         )
 

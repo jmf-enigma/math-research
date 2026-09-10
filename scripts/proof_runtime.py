@@ -33,6 +33,7 @@ PROOF_STATUSES = {
     "refuted",
     "lemma-conditional",
     "human-proof",
+    "referee-accepted",
     "tool-checked",
     "formalized-local",
     "formalized-complete",
@@ -329,6 +330,8 @@ def init_runtime(
             "schema_version": SCHEMA_VERSION,
             "record_id": f"event-{uuid.uuid4().hex}",
             "timestamp_utc": now,
+            "claim_sha256": claim_hash,
+            "claim_revision": 0,
             "record_sha256": sha256_text(canonical_json(init_record)),
             "record": init_record,
         },
@@ -372,7 +375,7 @@ def ensure_runtime(project: str | Path) -> dict[str, Any]:
 
 
 def _append_record(root: Path, channel: str, record: dict[str, Any]) -> dict[str, Any]:
-    read_state(root)
+    state = read_state(root)
     if channel not in CHANNELS:
         raise ValueError(f"unknown runtime channel {channel!r}; choose from {', '.join(CHANNELS)}")
     if not isinstance(record, dict):
@@ -385,6 +388,8 @@ def _append_record(root: Path, channel: str, record: dict[str, Any]) -> dict[str
         "schema_version": SCHEMA_VERSION,
         "record_id": f"{channel}-{uuid.uuid4().hex}",
         "timestamp_utc": now,
+        "claim_sha256": state["claim_sha256"],
+        "claim_revision": state.get("claim_revision", 0),
         "record_sha256": record_hash,
         "record": record,
     }
@@ -412,10 +417,16 @@ def update_state(
     proof_status: str | None = None,
     current_node: str | None = None,
     last_decisive_artifact: str | None = None,
+    evidence_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = project_path(project)
     state = ensure_runtime(root)
     changes: dict[str, Any] = {}
+    if evidence_summary is not None and state.get("evidence_summary") != evidence_summary:
+        if not isinstance(evidence_summary, dict):
+            raise ValueError("evidence_summary must be an object")
+        changes["evidence_summary"] = evidence_summary
+        state["evidence_summary"] = evidence_summary
     if proof_status is not None:
         if proof_status not in PROOF_STATUSES:
             raise ValueError(
@@ -461,6 +472,7 @@ def revise_claim(project: str | Path, reason: str) -> dict[str, Any]:
     state["proof_status"] = "unresolved"
     state["current_node"] = None
     state["last_decisive_artifact"] = None
+    state.pop("evidence_summary", None)
     state["updated_at_utc"] = utc_now()
     atomic_write_json(state_path(root), state)
     _append_record(
@@ -476,8 +488,11 @@ def revise_claim(project: str | Path, reason: str) -> dict[str, Any]:
     return read_state(root)
 
 
-def iter_channel(project: str | Path, channel: str) -> Iterable[dict[str, Any]]:
+def iter_channel(
+    project: str | Path, channel: str, *, current_claim_only: bool = False
+) -> Iterable[dict[str, Any]]:
     path = channel_path(project, channel)
+    state = read_state(project) if current_claim_only else None
     if not path.exists():
         return
     with path.open("r", encoding="utf-8") as handle:
@@ -497,6 +512,17 @@ def iter_channel(project: str | Path, channel: str) -> Iterable[dict[str, Any]]:
             validate_record(channel, record)
             if payload.get("record_sha256") != sha256_text(canonical_json(record)):
                 raise ValueError(f"runtime record hash mismatch in {path} at line {line_number}")
+            if state is not None:
+                # Unversioned legacy records are usable only before the first theorem repair.
+                revision = state.get("claim_revision", 0)
+                if payload.get("claim_sha256") is None:
+                    if revision != 0:
+                        continue
+                elif (
+                    payload.get("claim_sha256") != state["claim_sha256"]
+                    or payload.get("claim_revision") != revision
+                ):
+                    continue
             yield payload
 
 
@@ -537,7 +563,7 @@ def runtime_brief(project: str | Path, limit: int = 2) -> dict[str, Any]:
     for channel in CHANNELS:
         tail: deque[dict[str, Any]] = deque(maxlen=limit or 1)
         count = 0
-        for entry in iter_channel(root, channel):
+        for entry in iter_channel(root, channel, current_claim_only=True):
             count += 1
             if limit:
                 tail.append(compact_envelope(channel, entry))
