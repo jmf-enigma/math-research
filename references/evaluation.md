@@ -10,11 +10,7 @@ Use when maintaining the skill or claiming a capability improvement. Ordinary pr
 
 ## Regression commands
 
-```bash
-python3 scripts/smoke_proof_loop.py
-python3 scripts/test_proof_loop_recovery.py
-python3 scripts/smoke_workbench.py
-```
+Use the maintained command list in [README: Development](../README.md#development), including the focused evidence and recovery regressions as well as the integrated smoke checks.
 
 Include accepted and refuted candidates, wrong/uncertain/empty verdicts, central versus local errors, repeated repair, tool crashes, missing evidence, changed artifacts, Chinese mathematical descriptions, and theorem repair. A split run should preserve the same next mathematical action as a continuous run. Changes to documentation wording are not mathematical tests.
 

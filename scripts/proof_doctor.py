@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from audit_ledger import audit_ledger_text, section_body
-from computation_artifact import audit_artifact
+from computation_artifact import ComputationHistory, audit_artifact
 from frontier_evidence import FRONTIER_STATUSES, validate_frontier_bundle
 from lean_bridge import audit_formal_result
 from proof_runtime import CHANNELS, ensure_runtime, iter_channel
@@ -183,6 +183,7 @@ def runtime_referee_feedback(project: Path) -> dict:
         }
         verification_entries = channels["verification_reports"]
         computation_entries = channels["computations"]
+        computation_history = ComputationHistory.read(project)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {
             "available": False,
@@ -266,7 +267,7 @@ def runtime_referee_feedback(project: Path) -> dict:
 
     def cached_audit(artifact_id: str) -> dict:
         if artifact_id not in artifact_audits:
-            artifact_audits[artifact_id] = audit_artifact(project, artifact_id)
+            artifact_audits[artifact_id] = audit_artifact(project, artifact_id, history=computation_history)
         return artifact_audits[artifact_id]
 
     for artifact_id in sorted(passed_artifacts):
@@ -731,7 +732,9 @@ def decomposition_admission_summary(project: Path, state: str) -> dict:
     replay_complete = not proved_required or replay_status == "passed"
     blocks_progress = active and (not admitted or not replay_complete)
 
-    if missing:
+    if not active:
+        action = "not activated"
+    elif missing:
         action = "Complete decomposition admission before proving another child: fill " + ", ".join(
             missing
         ) + "."
@@ -754,10 +757,8 @@ def decomposition_admission_summary(project: Path, state: str) -> dict:
             + ", ".join(proved_unused)
             + "."
         )
-    elif active:
-        action = "Proceed with the least-certain required child on the admitted parent assembly path."
     else:
-        action = "not activated"
+        action = "Proceed with the least-certain required child on the admitted parent assembly path."
 
     return {
         "active": active,
@@ -1603,6 +1604,39 @@ def diagnose(project: Path) -> dict:
 
 
 def print_human(result: dict) -> None:
+    """Show the current decision and material evidence, keeping inactive controls out of the way."""
+    print(f"project: {result['project']}")
+    print(f"state: {result['proof_state']}")
+    print(f"status: {result['status']} / {result['verification_status']}")
+    print(f"primary action: {result['primary_action']}")
+    audit = result["audit"]
+    print(f"ready_for_final_proof: {audit['ready_for_final_proof']}")
+    referee = result["latest_referee"]
+    if referee["available"]:
+        print(f"latest referee: {referee['verdict']} (scope: {referee['review_scope']})")
+    if referee["passed_claim_ids"]:
+        names = referee["passed_claim_ids"]
+        suffix = f" (+{len(names) - 8} more)" if len(names) > 8 else ""
+        print("checked local claims: " + ", ".join(names[:8]) + suffix)
+    for issue in referee["runtime_errors"]:
+        print(f"evidence issue: {issue}")
+    for field in ("invalid_computation_artifacts", "invalid_formal_artifacts"):
+        for artifact in referee[field]:
+            name = artifact.get("artifact_id") or artifact.get("node_id") or "unknown artifact"
+            print(f"evidence issue ({name}): " + "; ".join(artifact["errors"]))
+    for warning in referee["computation_warnings"]:
+        print(f"evidence warning ({warning['artifact_id']}): " + "; ".join(warning["warnings"]))
+    for field in ("missing_headings", "empty_sections"):
+        if audit[field]:
+            print(f"{field}: " + ", ".join(audit[field]))
+    if audit["placeholder_count"]:
+        print(f"unfilled ledger items: {audit['placeholder_count']}")
+    if not audit["ready_for_final_proof"] and result["recommended_files"]:
+        print("next files: " + ", ".join(result["recommended_files"]))
+    print("Use --details for the full diagnosis, or --json for structured output.")
+
+
+def print_detailed(result: dict) -> None:
     print(f"project: {result['project']}")
     print(f"state: {result['proof_state']}")
     print(f"mode: {result['mode']}")
@@ -1716,11 +1750,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Diagnose the next move for a theory proof project.")
     parser.add_argument("project", help="Proof project directory containing LEDGER.md")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    parser.add_argument("--details", action="store_true", help="Show every diagnostic section, including inactive controls")
     args = parser.parse_args()
 
     result = diagnose(Path(args.project))
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
+    elif args.details:
+        print_detailed(result)
     else:
         print_human(result)
 

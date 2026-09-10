@@ -41,6 +41,8 @@ git clone https://github.com/jmf-enigma/math-research.git \
 
 Restart Codex or refresh skill discovery. The controller uses Python 3.10+ and the standard library. Wolfram, Lean, Sage, Z3, Peppy, Matlas, TheoremSearch, and expert-model consultation are optional backends.
 
+Exact Python computations can use `python3` or an explicit Python interpreter path directly. A custom math wrapper is optional; a virtual environment keeps its own interpreter entrypoint.
+
 Upgrading from `codex-theory-proof-workbench` or the `theory-proof-workbench` skill? Back up the old installation, install under `math-research`, and update saved commands and skill references. Keep one discoverable `SKILL.md`; existing proof projects retain their files and history. See [migration details](references/runtime-recovery.md#skill-rename).
 
 Invoke it explicitly for a hard proof:
@@ -119,6 +121,8 @@ python3 scripts/proof_runtime.py brief path/to/project --markdown
 ```
 
 It preserves failed-state fingerprints, decomposition and parent-replay evidence, computation artifacts, verifier reports, Lean handoffs, and honest proof status.
+
+`proof_doctor.py PROJECT` shows the next action and material evidence issues. Add `--details` for all diagnostic sections or `--json` for structured output. Inactive workflow sections stay out of the default view.
 
 ## Research Basis
 

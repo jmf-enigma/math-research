@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import re
@@ -18,6 +19,7 @@ from proof_runtime import (
     append_record,
     atomic_write_json,
     canonical_json,
+    channel_path,
     ensure_runtime,
     iter_channel,
     project_path,
@@ -50,6 +52,8 @@ ALLOWED_EXECUTABLES = {
     "codex-math-python",
     "codex-sage",
     "codex-mathlib-lean",
+    "python",
+    "python3",
 }
 INLINE_CODE_FLAGS = {"-c", "-code", "--code", "--eval", "-e"}
 SCRIPT_SUFFIXES = {".lean", ".py", ".sage", ".wl", ".wls"}
@@ -73,17 +77,42 @@ def relative_to_project(project: Path, path: Path) -> str:
     return path.resolve().relative_to(project).as_posix()
 
 
+def python_script_argument(command: list[str]) -> str | None:
+    """Locate Python's actual script, rather than an unrelated script in its arguments."""
+    name = Path(command[0]).name
+    if name != "codex-math-python" and not re.fullmatch(r"python(?:3(?:\.\d+)?)?", name):
+        return None
+    index = 1
+    while index < len(command):
+        option = command[index]
+        if option == "--":
+            index += 1
+            break
+        if not option.startswith("-"):
+            break
+        if option in {"-W", "-X"}:
+            index += 2
+        elif option.startswith(("-W", "-X")) or re.fullmatch(r"-[bBdEIOPqRsSuv]+", option):
+            index += 1
+        else:
+            raise ValueError("Python replay requires a recorded script; inline code, module execution, and unsupported interpreter options are not accepted")
+    if index >= len(command):
+        raise ValueError("Python replay must name a recorded input script")
+    return command[index]
+
+
 def parse_command(raw: str) -> list[str]:
     payload = json.loads(raw)
     if not isinstance(payload, list) or not payload or not all(isinstance(item, str) for item in payload):
         raise ValueError("--command-json must be a nonempty JSON array of strings")
     executable = Path(payload[0]).name
-    if executable not in ALLOWED_EXECUTABLES:
+    if executable not in ALLOWED_EXECUTABLES and not re.fullmatch(r"python3\.\d+", executable):
         raise ValueError(
             f"replay executable {executable!r} is not allowed; choose from "
             + ", ".join(sorted(ALLOWED_EXECUTABLES))
         )
-    forbidden = sorted(flag for flag in payload[1:] if flag in INLINE_CODE_FLAGS)
+    python_script = python_script_argument(payload)
+    forbidden = sorted(flag for flag in payload[1:] if flag in INLINE_CODE_FLAGS) if python_script is None else []
     if forbidden:
         raise ValueError(
             "inline code is not replayable; put the computation in a recorded project-local "
@@ -97,7 +126,8 @@ def executable_descriptor(project: Path, command: list[str]) -> dict[str, Any]:
     resolved_raw = raw if Path(raw).is_absolute() else shutil.which(raw)
     if not resolved_raw:
         raise ValueError(f"replay executable not found on PATH: {raw}")
-    resolved = Path(resolved_raw).expanduser().resolve()
+    entrypoint = Path(resolved_raw).expanduser().absolute()
+    resolved = entrypoint.resolve()
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise ValueError(f"replay executable is not an executable file: {resolved}")
     if resolved.is_relative_to(project):
@@ -106,6 +136,7 @@ def executable_descriptor(project: Path, command: list[str]) -> dict[str, Any]:
     return {
         "name": resolved.name,
         "path": str(resolved),
+        "entrypoint": str(entrypoint),
         "bytes": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
         "sha256": sha256_file(resolved) if stat.st_size <= MAX_EXECUTABLE_HASH_BYTES else None,
@@ -159,6 +190,12 @@ def validate_command_inputs(
             "the command must name at least one recorded project-local script; inline expressions "
             "and unrecorded scripts are rejected"
         )
+    python_script = python_script_argument(command)
+    if python_script is not None:
+        script = Path(python_script).expanduser()
+        script = script if script.is_absolute() else cwd / script
+        if script.resolve() not in script_paths:
+            raise ValueError("Python's entrypoint must be a recorded project-local script")
     unrecorded = command_files - recorded_paths
     if unrecorded:
         paths = ", ".join(sorted(relative_to_project(project, path) for path in unrecorded))
@@ -378,7 +415,49 @@ def verify_inputs(project: Path, artifact: dict[str, Any]) -> list[str]:
     return errors
 
 
-def verify_artifact_spec(project: Path, artifact: dict[str, Any]) -> list[str]:
+def history_signature(project: Path) -> tuple[int, int, int, int] | None:
+    path = channel_path(project, "computations")
+    if not path.exists():
+        return None
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+
+@dataclass
+class ComputationHistory:
+    """Validated event index for one audit operation; never a persistent evidence cache."""
+
+    project: Path
+    signature: tuple[int, int, int, int] | None
+    recorded_hashes: dict[str, set[str | None]]
+    latest_replays: dict[str, dict[str, Any]]
+
+    @classmethod
+    def read(cls, project: Path) -> "ComputationHistory":
+        project = project_path(project)
+        before = history_signature(project)
+        recorded: dict[str, set[str | None]] = {}
+        replays: dict[str, dict[str, Any]] = {}
+        for envelope in iter_channel(project, "computations"):
+            record = envelope["record"]
+            artifact_id = record["artifact_id"]
+            if record["event_type"] == "computation_recorded":
+                value = record.get("spec_sha256")
+                recorded.setdefault(artifact_id, set()).add(value if isinstance(value, str) else None)
+            elif record["event_type"] == "computation_replayed":
+                replays[artifact_id] = record
+        if history_signature(project) != before:
+            raise ValueError("computation history changed while it was being read; repeat the audit")
+        return cls(project, before, recorded, replays)
+
+    def require_current(self, project: Path) -> None:
+        if self.project != project_path(project) or history_signature(project) != self.signature:
+            raise ValueError("computation history changed during the audit; repeat it")
+
+
+def verify_artifact_spec(
+    project: Path, artifact: dict[str, Any], *, history: ComputationHistory | None = None,
+) -> list[str]:
     artifact_id = artifact.get("artifact_id")
     expected = artifact.get("spec_sha256")
     immutable_spec = {
@@ -390,12 +469,9 @@ def verify_artifact_spec(project: Path, artifact: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not isinstance(expected, str) or expected != actual:
         errors.append("computation artifact specification hash mismatch")
-    recorded_hashes = {
-        entry.get("record", {}).get("spec_sha256")
-        for entry in iter_channel(project, "computations")
-        if entry.get("record", {}).get("event_type") == "computation_recorded"
-        and entry.get("record", {}).get("artifact_id") == artifact_id
-    }
+    history = history if history is not None else ComputationHistory.read(project)
+    history.require_current(project)
+    recorded_hashes = history.recorded_hashes.get(artifact_id, set())
     if recorded_hashes != {expected}:
         errors.append("computation artifact specification does not match its recorded event")
     return errors
@@ -417,10 +493,22 @@ def verify_executable(project: Path, artifact: dict[str, Any]) -> tuple[Path | N
     expected_hash = descriptor.get("sha256")
     if expected_hash and sha256_file(path) != expected_hash:
         errors.append("recorded executable sha256 changed")
+    entrypoint = descriptor.get("entrypoint")
+    if entrypoint is not None:
+        if not isinstance(entrypoint, str) or not Path(entrypoint).is_absolute():
+            errors.append("recorded executable entrypoint is invalid")
+        else:
+            entrypoint_path = Path(entrypoint)
+            if not entrypoint_path.is_file() or entrypoint_path.resolve() != path:
+                errors.append("recorded executable entrypoint changed or is missing")
+            else:
+                path = entrypoint_path
     return path, errors
 
 
-def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[str, Any]:
+def audit_artifact(
+    project_raw: str | Path, artifact_id_or_path: str, *, history: ComputationHistory | None = None,
+) -> dict[str, Any]:
     """Check that a recorded pass is still present, internally consistent, and replayable."""
     project = project_path(project_raw)
     state = ensure_runtime(project)
@@ -439,7 +527,8 @@ def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[st
         }
 
     errors = verify_inputs(project, artifact)
-    spec_errors = verify_artifact_spec(project, artifact)
+    history = history if history is not None else ComputationHistory.read(project)
+    spec_errors = verify_artifact_spec(project, artifact, history=history)
     errors.extend(spec_errors)
     scope = {key: artifact.get(key) for key in (
         "project_claim_sha256", "claim_id", "local_claim", "assumptions", "result_kind", "comparison",
@@ -460,13 +549,7 @@ def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[st
     errors.extend(executable_errors)
 
     artifact_id = artifact["artifact_id"]
-    replay_events = [
-        entry.get("record", {})
-        for entry in iter_channel(project, "computations")
-        if entry.get("record", {}).get("event_type") == "computation_replayed"
-        and entry.get("record", {}).get("artifact_id") == artifact_id
-    ]
-    latest_replay_event = replay_events[-1] if replay_events else None
+    latest_replay_event = history.latest_replays.get(artifact_id)
     replays = artifact.get("replays", [])
     latest = replays[-1] if replays and isinstance(replays[-1], dict) else None
     latest_replay_id = latest.get("replay_id") if latest else None
@@ -534,6 +617,7 @@ def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[st
             if normalize_stdout(actual_text) != normalize_stdout(expected_text):
                 errors.append("latest replay stdout no longer matches the canonical expected output")
 
+    history.require_current(project)
     errors = list(dict.fromkeys(errors))
     warnings = list(dict.fromkeys(warnings))
     return {
@@ -590,6 +674,7 @@ def supersede_artifact(args: argparse.Namespace) -> dict[str, Any]:
 def replay_artifact(args: argparse.Namespace) -> dict[str, Any]:
     project = project_path(args.project)
     state = ensure_runtime(project)
+    artifact_file_sha256 = sha256_file(artifact_path(project, args.artifact))
     path, artifact = load_artifact(project, args.artifact)
     command = artifact.get("command")
     if not isinstance(command, list):
@@ -646,12 +731,12 @@ def replay_artifact(args: argparse.Namespace) -> dict[str, Any]:
             status = "failed"
         elif artifact.get("comparison") == "stdout-exact":
             expected = artifact.get("expected_output") or {}
-            expected_path = project_local_path(project, expected.get("path", ""))
             try:
+                expected_path = project_local_path(project, expected.get("path", ""))
                 actual_text = stdout_path.read_text(encoding="utf-8")
                 expected_text = expected_path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                output_errors.append("stdout or expected output is not UTF-8 text")
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                output_errors.append(f"could not compare exact stdout: {exc}")
                 status = "failed"
             else:
                 status = (
@@ -662,11 +747,38 @@ def replay_artifact(args: argparse.Namespace) -> dict[str, Any]:
         else:
             status = "passed"
 
+    # A process may update its own inputs or the expected answer. Its pass must
+    # still describe the exact files and claim that were admitted before launch.
+    claim_stable = True
+    try:
+        current_state = ensure_runtime(project)
+        claim_stable = (current_state["claim_sha256"], current_state.get("claim_revision", 0)) == (
+            state["claim_sha256"], state.get("claim_revision", 0)
+        )
+        if not claim_stable:
+            input_errors.append("project claim revision changed during computation replay")
+    except (OSError, ValueError) as exc:
+        claim_stable = False
+        input_errors.append(f"project claim is no longer valid: {exc}")
+    try:
+        input_errors.extend(verify_inputs(project, artifact))
+        _, executable_errors = verify_executable(project, artifact)
+        input_errors.extend(executable_errors)
+    except (OSError, ValueError) as exc:
+        input_errors.append(f"could not revalidate computation inputs: {exc}")
+    input_errors = list(dict.fromkeys(input_errors))
+    if input_errors:
+        status = "input-changed"
+    if not path.is_file() or sha256_file(path) != artifact_file_sha256:
+        raise ValueError("computation artifact changed during replay; its changed contents were preserved")
+
     replay = {
         "replay_id": replay_id,
         "started_at_utc": started,
         "finished_at_utc": utc_now(),
         "status": status,
+        "claim_sha256": state["claim_sha256"],
+        "claim_revision": state.get("claim_revision", 0),
         "timeout_seconds": args.timeout,
         "timed_out": timed_out,
         "return_code": return_code,
@@ -680,20 +792,22 @@ def replay_artifact(args: argparse.Namespace) -> dict[str, Any]:
     artifact.setdefault("replays", []).append(replay)
     artifact["replay_status"] = status
     atomic_write_json(path, artifact)
-    append_record(
-        project,
-        "computations",
-        {
-            "event_type": "computation_replayed",
-            "artifact_id": artifact["artifact_id"],
-            "replay_id": replay_id,
-            "status": status,
-            "result_kind": artifact["result_kind"],
-            "return_code": return_code,
-            "input_errors": input_errors,
-            "output_errors": output_errors,
-        },
-    )
+    if claim_stable:
+        append_record(
+            project,
+            "computations",
+            {
+                "event_type": "computation_replayed",
+                "artifact_id": artifact["artifact_id"],
+                "replay_id": replay_id,
+                "status": status,
+                "result_kind": artifact["result_kind"],
+                "return_code": return_code,
+                "input_errors": input_errors,
+                "output_errors": output_errors,
+            },
+            expected_claim=(state["claim_sha256"], state.get("claim_revision", 0)),
+        )
     return replay
 
 
