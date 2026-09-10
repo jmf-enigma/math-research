@@ -46,6 +46,10 @@ For a full theorem, the command also creates an acceptance report. Its four gate
 
 Each passing gate needs concrete evidence text. Lean compilation alone cannot fill these fields.
 
+The report's `target_binding` records the audited Lean target, project-local Lean sources, and Lean/Lake configuration hashes. A changed binding resets all four gates to `not-audited`; it cannot inherit the old statement-fidelity audit. For an existing report without this binding, run verification once to initialize it, inspect the current target and dependencies, fill the four gates with current evidence, then verify again with `--promote-final`. Old result packets retain their earlier audit for inspection.
+
+The source binding excludes generated package caches under `.lake`. Pin external dependencies in the project configuration and inspect their actual environment during the axiom audit; the local source hashes do not certify an externally modified package cache.
+
 ## Interactive Fast Lane
 
 When the current task exposes the Lean MCP tools, keep the request immutable and iterate only on the target file. Read `lean_goal`, run `lean_local_search`, test at most three materially distinct snippets with `lean_multi_attempt`, inspect `lean_code_actions`, and re-read diagnostics. Use `lean_run_code` only for self-contained elaboration experiments and `lean_verify` for an axiom/source audit.
@@ -75,7 +79,7 @@ codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/lean
   --runner auto
 ```
 
-The verifier calls the companion `lean-theorem-formalizer` status checker, requires the exact target name and kind, scans blockers, compares the checked file's before/after hashes, writes a unique result packet, and appends the result to `.proof_runtime`. A file changed during checking is not eligible evidence.
+The verifier calls the companion `lean-theorem-formalizer` status checker, requires affirmative compile, blocker, and exact-declaration results, compares source/configuration hashes before and after checking, writes a unique result packet, and appends the result to `.proof_runtime`. It revalidates file-backed informal statements and the frozen claim revision. Missing checker fields or inputs changed during checking cannot pass the target gate.
 
 Use `--failure-stage statement-fidelity`, `mathematical`, or `assembly` when Lean exposed a problem outside local proof repair. Use `--diagnosis` only for a root-cause judgment grounded in the exact diagnostic, and `--repair` for one bounded next edit. The raw diagnostic remains preserved.
 
@@ -90,6 +94,10 @@ Use `--failure-stage statement-fidelity`, `mathematical`, or `assembly` when Lea
 | Full theorem passes but an acceptance gate is missing | Theory integrator completes the audit; status stays below complete |
 
 `formalized-local` applies only to the checked node. Use `--promote-final` only for a `full-theorem` request after all four acceptance gates pass. A tampered request, stale claim revision, missing target, placeholder, target-encoding axiom, or incomplete acceptance report blocks promotion.
+
+If rechecking the request that supplied full completion fails or finds stale acceptance gates, its active completion is revoked. `proof_doctor.py` also checks recorded formal results, their current sources, checker, request, and acceptance report before recommending finalization. Legacy results without current provenance must be checked again. Corrupt runtime records remain explicit blockers instead of disappearing as absent evidence.
+
+During nonfinal work, a named mathematical repair or missing-premise search can take precedence over a reminder to replay a failed formal node. The node's evidence remains invalid until it is checked again; identifying its first error does not restore completion.
 
 ## Return Packet
 

@@ -41,6 +41,14 @@ if output.name == "verification.json":
     elif forced == "mutate-contract":
         path = project / "claim.md"
         path.write_text(path.read_text() + "- Additional checked certificate required.\\n")
+    elif forced == "mutate-claim":
+        sys.path.insert(0, os.environ["TEST_SKILL_SCRIPTS"])
+        from proof_runtime import revise_claim
+        routing = json.loads((project / "routing.json").read_text())
+        routing["claim"] = "For every integer n, n(n+1) is odd."
+        (project / "routing.json").write_text(json.dumps(routing))
+        (project / "claim.md").write_text("# Claim\\n\\n" + routing["claim"] + "\\n")
+        revise_claim(project, "Explicit claim revision during a mocked review.")
     if forced == "crash":
         sys.exit(3)
     if forced == "tool-evidence-gap":
@@ -50,6 +58,15 @@ if output.name == "verification.json":
     elif forced and payload["verdict"] == "wrong":
         payload["failure_kind"] = forced
         payload["first_error"] = {"location": "target", "issue": "The central implication proves a different quantified statement."}
+    if forced == "malformed":
+        payload = {}
+    elif forced == "malformed-enum":
+        payload["verdict"] = []
+    elif forced == "contract-rejection":
+        issue = "This acceptance contract does not permit a factorization proof."
+        payload.update(verdict="wrong", failure_kind="assembly-gap",
+                       first_error={"location": "proof method", "issue": issue},
+                       critical_errors=[{"location": "proof method", "issue": issue}], gaps=[])
 output.write_text(json.dumps(payload), encoding="utf-8")
 '''
 
@@ -70,7 +87,8 @@ class RecoveryTests(unittest.TestCase):
 
     def run_case(self, name, scenario="accept", iterations=1, *, failure="", extra=(), error=False):
         env = dict(os.environ, MOCK_PROOF_SCENARIO=scenario,
-                   TEST_REFEREE_FAILURE=failure, PYTHONDONTWRITEBYTECODE="1")
+                   TEST_REFEREE_FAILURE=failure, PYTHONDONTWRITEBYTECODE="1",
+                   TEST_SKILL_SCRIPTS=str(ROOT / "scripts"))
         command = [sys.executable, str(ROOT / "scripts" / "proof_loop.py"),
                    str(self.root / name), "--max-iterations", str(iterations),
                    "--codex-bin", str(self.codex), *extra]
@@ -156,6 +174,21 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(resumed["cumulative_usage"]["iterations"], 1)
         self.assertEqual(loop.prior_retired_routes(self.root / "crash"), {})
 
+    def test_malformed_referee_resumes_verification_without_external_evidence(self):
+        for failure in ("malformed", "malformed-enum"):
+            with self.subTest(failure=failure):
+                first = self.run_case(failure, failure=failure)
+                self.assertEqual(first["status"], "runtime-error")
+                self.assertIn("invalid referee output schema", first["obstruction"])
+                self.assertEqual(self.checkpoint(failure)["phase"], "verify")
+                self.assertIsNone(self.checkpoint(failure)["evidence_request"])
+                pending = self.checkpoint(failure)["pending_candidate"]
+                resumed = self.run_case(failure)
+                self.assertEqual(resumed["status"], "referee-accepted")
+                self.assertEqual(resumed["cumulative_usage"]["iterations"], 1)
+                self.assertEqual(self.checkpoint(failure)["pending_candidate"], pending)
+                self.assertEqual(loop.prior_retired_routes(self.root / failure), {})
+
     def test_scout_evidence_wait_does_not_repeat_scouts(self):
         first = self.run_case("scouts", "hard_blocked", extra=("--hard-exploration",))
         idle = self.run_case("scouts", "hard_blocked", extra=("--hard-exploration",))
@@ -168,6 +201,7 @@ class RecoveryTests(unittest.TestCase):
         self.run_case("refs", extra=self.evidence("refs"))
         args = self.evidence("refs", "Revised exact evidence.")
         self.assertIn("artifact changed", self.run_case("refs", error=True))
+        self.assertEqual(runtime.read_state(self.root / "refs")["proof_status"], "unresolved")
         resumed = self.run_case("refs", extra=args)
         self.assertEqual(resumed["status"], "referee-accepted")
         self.assertNotIn("reused_completed_result", resumed)
@@ -193,6 +227,52 @@ class RecoveryTests(unittest.TestCase):
         result = self.run_case("report")
         Path(result["referee_report"]).write_text("{}")
         self.assertIn("artifact changed", self.run_case("report", error=True))
+        self.assertEqual(runtime.read_state(self.root / "report")["proof_status"], "unresolved")
+
+    def test_fresh_attempt_invalidates_acceptance_and_keeps_history(self):
+        for change_contract in (False, True):
+            with self.subTest(change_contract=change_contract):
+                name = "fresh-contract" if change_contract else "fresh-same-claim"
+                accepted = self.run_case(name)
+                project = self.root / name
+                old_artifact = Path(accepted["artifact"]).read_bytes()
+                if change_contract:
+                    path = project / "claim.md"
+                    path.write_text(path.read_text() + "- Require an exact symbolic certificate.\n")
+                waiting = self.run_case(name, "blocked", extra=("--fresh-attempt",))
+                self.assertEqual(waiting["status"], "needs-evidence")
+                state = runtime.runtime_brief(project)["state"]
+                self.assertEqual(state["proof_status"], "unresolved")
+                self.assertIsNone(state["last_decisive_artifact"])
+                self.assertEqual(state["evidence_summary"]["disposition"], "pending")
+                self.assertEqual(Path(accepted["artifact"]).read_bytes(), old_artifact)
+                invalidations = [entry["record"] for entry in runtime.iter_channel(project, "events")
+                                 if entry["record"]["event_type"] == "acceptance_invalidated"]
+                self.assertEqual(invalidations[-1]["previous_result"]["artifact_descriptor"], accepted["artifact_descriptor"])
+
+    def test_corrupt_accepted_result_invalidates_brief_and_keeps_pending_history(self):
+        for target in ("artifact_descriptor", "referee_packet_descriptor", "referee_report_descriptor", "checkpoint"):
+            with self.subTest(target=target):
+                name = "accepted-corrupt-" + target
+                accepted = self.run_case(name)
+                project = self.root / name
+                checkpoint = self.checkpoint(name)
+                pending_path = project / checkpoint["pending_candidate"]["artifact"]["path"]
+                original_candidate = pending_path.read_bytes()
+                if target == "checkpoint":
+                    path = project / ".proof_runtime" / "proof_loop_checkpoint.json"
+                    data = json.loads(path.read_text())
+                    data["result"]["candidate_kind"] = "refutation"
+                    path.write_text(json.dumps(data))
+                else:
+                    (project / accepted[target]["path"]).write_text("Corrupted artifact.\n")
+                error = self.run_case(name, error=True)
+                self.assertTrue("artifact changed" in error or "checkpoint hash mismatch" in error)
+                state = runtime.runtime_brief(project)["state"]
+                self.assertEqual(state["proof_status"], "unresolved")
+                self.assertIsNone(state["last_decisive_artifact"])
+                self.assertEqual(pending_path.read_bytes(), original_candidate)
+                self.assertTrue((project / ".proof_runtime" / "proof_loop_checkpoint.json").exists())
 
     def test_contract_change_rechecks_existing_candidate_and_downgrades_status(self):
         first = self.run_case("contract")
@@ -247,6 +327,34 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(resumed["status"], "referee-accepted")
         self.assertEqual(resumed["cumulative_usage"]["iterations"], 1)
 
+    def test_claim_revision_during_loop_review_never_enters_current_claim_brief(self):
+        self.assertIn("the theorem changed", self.run_case("claim-race", failure="mutate-claim", error=True))
+        project = self.root / "claim-race"
+        brief = runtime.runtime_brief(project)
+        self.assertEqual(brief["state"]["claim_revision"], 1)
+        self.assertEqual(brief["counts"]["verification_reports"], 0)
+        self.assertEqual(loop.prior_retired_routes(project), {})
+        self.assertEqual(brief["state"]["proof_status"], "unresolved")
+
+    def test_standalone_referee_fences_prepared_identity_and_reference_copies(self):
+        for failure in ("mutate-claim", "mutate-contract", "mutate-candidate", "mutate-reference", "mutate-copy"):
+            with self.subTest(failure=failure):
+                name = "standalone-" + failure
+                self.run_case(name, "blocked")
+                project = self.root / name
+                (project / "candidate.md").write_text("One of n and n+1 is even, so their product is even.\n")
+                extra = self.evidence(name)
+                env = dict(os.environ, MOCK_PROOF_SCENARIO="accept", TEST_REFEREE_FAILURE=failure,
+                           TEST_SKILL_SCRIPTS=str(ROOT / "scripts"), PYTHONDONTWRITEBYTECODE="1")
+                command = [sys.executable, str(ROOT / "scripts" / "run_referee.py"), str(project),
+                           "--proof", "candidate.md", "--codex-bin", str(self.codex), *extra]
+                result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("changed", result.stderr)
+                reports = list(runtime.iter_channel(project, "verification_reports"))
+                self.assertFalse(any(entry["record"]["event_type"] == "independent_referee_completed" for entry in reports))
+                self.assertEqual(loop.prior_retired_routes(project), {})
+
     def test_accepted_packet_hash_is_checked_and_published_proof_matches_snapshot(self):
         result = self.run_case("packet")
         project = self.root / "packet"
@@ -277,6 +385,59 @@ class RecoveryTests(unittest.TestCase):
         loop.record_retirement(project, {**plan, "proof_kernel": plan["key_original_step"]},
                                plan["route_signature"], "A concrete counterexample defeats this route.")
         self.assertIn(plan["route_signature"], loop.prior_retired_routes(project))
+
+    def test_changed_contract_allows_rereview_of_formerly_retired_route(self):
+        project = loop.initialize_project(str(self.root / "retired-contract"), CLAIM, "project")
+        path = project / "claim.md"
+        path.write_text(path.read_text() + "- A factorization proof is not admissible.\n")
+        rejected = self.run_case("retired-contract", failure="contract-rejection")
+        self.assertEqual(rejected["status"], "budget-exhausted")
+        retired = loop.prior_retired_routes(project)
+        self.assertEqual(len(retired), 1)
+        excluded = self.run_case("retired-contract")
+        self.assertEqual(excluded["status"], "budget-exhausted")
+        self.assertEqual(excluded["cumulative_usage"]["agent_calls"], 3)
+        path.write_text(path.read_text().replace("A factorization proof is not admissible.",
+                                                "A factorization proof is admissible."))
+        accepted = self.run_case("retired-contract")
+        self.assertEqual(accepted["status"], "referee-accepted")
+        self.assertEqual(accepted["cumulative_usage"]["agent_calls"], 5)
+        self.assertEqual(loop.prior_retired_routes(project), {})
+        hints = self.packet("retired-contract", accepted)["historical_route_hints"]
+        self.assertIn(next(iter(retired)), {hint["route_signature"] for hint in hints})
+        self.assertTrue(any(entry["record"]["outcome"] == "retired"
+                            for entry in runtime.iter_channel(project, "attempts")))
+
+    def test_unknown_legacy_contract_failure_remains_a_hint_not_an_exclusion(self):
+        project = loop.initialize_project(str(self.root / "legacy-contract"), CLAIM, "project")
+        generation = dict(route_family="parity", central_object="an integer factorization",
+                          proof_kernel="the product contains a factor two",
+                          assumptions_used=["n is an integer"])
+        signature = loop.route_signature(generation)
+        runtime.append_record(project, "attempts", {
+            "event_type": "proof_loop_route_retired", "route_family": generation["route_family"],
+            "central_object": generation["central_object"], "target_lemma": generation["proof_kernel"],
+            "outcome": "retired", "failure_witness": "A prior acceptance obligation ruled out this method.",
+            "route_signature": signature, "signature_version": 2,
+        })
+        self.assertEqual(loop.prior_retired_routes(project), {})
+        accepted = self.run_case("legacy-contract")
+        self.assertEqual(accepted["status"], "referee-accepted")
+        hints = self.packet("legacy-contract", accepted)["historical_route_hints"]
+        self.assertEqual(hints[0]["route_signature"], signature)
+        self.assertEqual(hints[0]["scope"], "prior-or-unknown-acceptance-contract")
+
+    def test_historical_scout_retirement_is_scoped_to_its_contract(self):
+        self.run_case("scout-contract", "blocked", extra=("--hard-exploration",))
+        project = self.root / "scout-contract"
+        deferred = loop.prior_untried_routes(project)[0]
+        candidate = {**deferred, "candidate_id": "fixture-deferred-route"}
+        loop.record_plan_disposition(project, "fixture", candidate, "retire", "The old acceptance contract rules this out.")
+        self.assertNotIn(deferred["route_signature"], {item["route_signature"] for item in loop.prior_untried_routes(project)})
+        path = project / "claim.md"
+        path.write_text(path.read_text() + "- The previously ruled out method is admissible.\n")
+        self.assertIn(deferred["route_signature"], {item["route_signature"] for item in loop.prior_untried_routes(project)})
+        self.assertEqual(loop.prior_retired_routes(project), {})
 
     def test_deferred_route_can_be_selected_after_explicit_retirement(self):
         self.run_case("history", extra=("--hard-exploration",))

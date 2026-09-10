@@ -11,8 +11,9 @@ from pathlib import Path
 
 from audit_ledger import audit_ledger_text, section_body
 from computation_artifact import audit_artifact
-from frontier_evidence import validate_frontier_bundle
-from proof_runtime import ensure_runtime, iter_channel
+from frontier_evidence import FRONTIER_STATUSES, validate_frontier_bundle
+from lean_bridge import audit_formal_result
+from proof_runtime import CHANNELS, ensure_runtime, iter_channel
 from select_playbook import PLAYBOOKS, score
 
 
@@ -175,10 +176,14 @@ def read_json(path: Path) -> dict:
 
 def runtime_referee_feedback(project: Path) -> dict:
     try:
-        ensure_runtime(project)
-        verification_entries = list(iter_channel(project, "verification_reports"))
-        computation_entries = list(iter_channel(project, "computations"))
-    except (OSError, ValueError, json.JSONDecodeError):
+        runtime_state = ensure_runtime(project)
+        channels = {
+            name: list(iter_channel(project, name, current_claim_only=True))
+            for name in CHANNELS
+        }
+        verification_entries = channels["verification_reports"]
+        computation_entries = channels["computations"]
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         return {
             "available": False,
             "verdict": None,
@@ -194,8 +199,46 @@ def runtime_referee_feedback(project: Path) -> dict:
             "invalid_computation_artifacts": [],
             "superseded_computation_artifacts": [],
             "computation_warnings": [],
+            "runtime_errors": [str(exc)],
+            "runtime_integrity_ok": False,
+            "invalid_formal_artifacts": [],
+            "passed_formal_node_ids": [],
             "needs_packet_repair": False,
         }
+
+    runtime_errors: list[str] = []
+    evidence_summary = runtime_state.get("evidence_summary")
+    if isinstance(evidence_summary, dict) and evidence_summary.get("disposition") == "pending":
+        runtime_errors.append(
+            "previous proof acceptance is invalidated: " + str(evidence_summary.get("basis") or "reverification is required")
+        )
+    latest_formal: dict[str, dict] = {}
+    previously_passed_formal: set[str] = set()
+    for envelope in channels["proof_nodes"]:
+        record = envelope["record"]
+        if record.get("event_type") == "lean_node_checked":
+            latest_formal[record["node_id"]] = record
+            if record.get("status") == "formalized-local":
+                previously_passed_formal.add(record["node_id"])
+    formal_audits = [audit_formal_result(project, latest_formal[node]) for node in sorted(previously_passed_formal)]
+    if runtime_state.get("proof_status") == "formalized-complete":
+        active_result = (
+            evidence_summary.get("formal_result_path")
+            if isinstance(evidence_summary, dict)
+            else None
+        ) or runtime_state.get("last_decisive_artifact")
+        active_audits = [audit for audit in formal_audits if (
+            audit["valid"] and audit["promoted_full_theorem"] and audit["result_path"] == active_result
+        )]
+        if active_audits:
+            # A current checked full target plus its bound assembly/axiom audit
+            # establishes its own scope; failed unrelated exploratory nodes do
+            # not refute that independent complete proof.
+            formal_audits = active_audits
+        else:
+            runtime_errors.append("formalized-complete has no current, valid full-theorem promotion evidence")
+    invalid_formal = [audit for audit in formal_audits if not audit["valid"]]
+    passed_formal = [audit["node_id"] for audit in formal_audits if audit["valid"]]
 
     recorded_claims: dict[str, str] = {}
     passed_artifacts: set[str] = set()
@@ -241,6 +284,16 @@ def runtime_referee_feedback(project: Path) -> dict:
                             "errors": ["computation supersession cycle detected"],
                         }
                     )
+                    cursor = ""
+                    break
+                source_scope = cached_audit(cursor).get("claim_scope_sha256")
+                replacement_scope = cached_audit(replacement_id).get("claim_scope_sha256")
+                if not source_scope or source_scope != replacement_scope:
+                    invalid_artifacts.append({
+                        "artifact_id": artifact_id,
+                        "claim_id": recorded_claims.get(artifact_id),
+                        "errors": [f"computation supersession changes or lacks immutable claim scope: {cursor} -> {replacement_id}"],
+                    })
                     cursor = ""
                     break
                 seen.add(replacement_id)
@@ -319,6 +372,10 @@ def runtime_referee_feedback(project: Path) -> dict:
             "invalid_computation_artifacts": invalid_artifacts,
             "superseded_computation_artifacts": superseded_artifacts,
             "computation_warnings": computation_warnings,
+            "runtime_errors": runtime_errors,
+            "runtime_integrity_ok": True,
+            "invalid_formal_artifacts": invalid_formal,
+            "passed_formal_node_ids": passed_formal,
             "needs_packet_repair": False,
         }
     record = verification_entries[-1].get("record", {})
@@ -361,6 +418,10 @@ def runtime_referee_feedback(project: Path) -> dict:
         "invalid_computation_artifacts": invalid_artifacts,
         "superseded_computation_artifacts": superseded_artifacts,
         "computation_warnings": computation_warnings,
+        "runtime_errors": runtime_errors,
+        "runtime_integrity_ok": True,
+        "invalid_formal_artifacts": invalid_formal,
+        "passed_formal_node_ids": passed_formal,
         "needs_packet_repair": failure_kind in {"missing-packet-evidence", "tool-evidence-gap"},
         "verification_path": record.get("verification_path"),
     }
@@ -723,7 +784,9 @@ def novel_problem_summary(project: Path, mode: str) -> dict:
         return ""
 
     def normalize_status(raw: str) -> str | None:
-        lower = raw.lower()
+        lower = raw.strip().lower()
+        if lower in FRONTIER_STATUSES:
+            return lower
         if "genuinely new" in lower or lower in {"new", "novel", "new problem"}:
             return "genuinely-new"
         if "apparently open" in lower or lower == "open":
@@ -739,9 +802,16 @@ def novel_problem_summary(project: Path, mode: str) -> dict:
     idea_status = normalize_status(concrete("known-solution status"))
     evidence_path = project / "literature" / "frontier-evidence.json"
     evidence_exists = evidence_path.exists()
-    evidence_data = read_json(evidence_path)
+    try:
+        evidence_data = read_json(evidence_path)
+    except (OSError, ValueError):
+        evidence_data = {}
+    if not isinstance(evidence_data, dict):
+        evidence_data = {}
+    frontier_data = evidence_data.get("frontier")
+    frontier_data = frontier_data if isinstance(frontier_data, dict) else {}
     manifest_status = normalize_status(
-        str((evidence_data.get("frontier") or {}).get("status") or "")
+        str(frontier_data.get("status") or "")
     )
     status = manifest_status or idea_status
 
@@ -770,10 +840,6 @@ def novel_problem_summary(project: Path, mode: str) -> dict:
     if frontier_required:
         evidence = validate_frontier_bundle(project)
         evidence_errors = list(evidence["errors"])
-        routing_claim = str(read_json(project / "routing.json").get("claim") or "").strip()
-        evidence_claim = str(evidence_data.get("claim") or "").strip()
-        if routing_claim and evidence_claim and routing_claim != evidence_claim:
-            evidence_errors.append("frontier evidence claim does not match the project claim")
         if idea_status and manifest_status and idea_status != manifest_status:
             evidence_errors.append("IDEA_MAP.md status conflicts with frontier-evidence.json")
         evidence["errors"] = evidence_errors
@@ -1236,6 +1302,13 @@ def primary_action_for(
     audit: dict,
     runtime_feedback: dict,
 ) -> str:
+    finalizing = state in {"S7-adversarial-review", "S8-finalize"}
+    if not runtime_feedback["runtime_integrity_ok"]:
+        return "Repair the invalid runtime record before continuing: " + runtime_feedback["runtime_errors"][0]
+    if finalizing and runtime_feedback["runtime_errors"]:
+        return "Repair the invalid or stale runtime evidence before finalizing: " + runtime_feedback["runtime_errors"][0]
+    if finalizing and runtime_feedback["invalid_formal_artifacts"]:
+        return "Recheck the stale or failed formal evidence before finalizing the proof."
     invalid_artifacts = runtime_feedback["invalid_computation_artifacts"]
     if invalid_artifacts:
         artifact_ids = ", ".join(item["artifact_id"] for item in invalid_artifacts[:3])
@@ -1261,12 +1334,12 @@ def primary_action_for(
         return "Import the prior failed routes, failure witnesses, and reusable lemmas before proposing a new proof route."
     if decomposition["blocks_progress"]:
         return decomposition["recommended_action"]
+    if novel_problem["frontier_scan_needed"]:
+        return novel_problem["recommended_action"]
     if state == "S8-finalize" and audit["ready_for_final_proof"]:
         return "Present the proof with its verified status and essential assumptions."
     if state in {"S7-adversarial-review", "S8-finalize"} and not audit["ready_for_final_proof"]:
         return "Close the blocking ledger and verification-gate gaps before presenting the proof."
-    if novel_problem["frontier_scan_needed"]:
-        return novel_problem["recommended_action"]
     if novel_problem["activated"] and not novel_problem["handoff_ready"]:
         return novel_problem["recommended_action"]
     if failure_localization["needed"]:
@@ -1280,6 +1353,13 @@ def primary_action_for(
             f"Execute the localized scope: {failure_localization['next_scope'][0]}; "
             "preserve the verified prefix and repair only affected dependents."
         )
+    # A failed formal node can require a new premise or mathematical repair;
+    # repeating its checker is not a substitute for that named nonfinal work.
+    # Its evidence remains invalid, so none of these routes can finalize it.
+    if runtime_feedback["runtime_errors"]:
+        return "Resolve the stale proof acceptance before reusing its checked status: " + runtime_feedback["runtime_errors"][0]
+    if runtime_feedback["invalid_formal_artifacts"]:
+        return "Inspect the stale or failed formal node and identify its repair before reusing its checked status."
     if progress["no_progress_threshold_met"] or state == "S9-stuck":
         return f"Execute the route decision: {route_decision['decision']}; produce {route_decision['next_artifact']}."
     if pv_need["needed"]:
@@ -1327,14 +1407,26 @@ def diagnose(project: Path) -> dict:
     decomposition = decomposition_admission_summary(project, state)
     route_decision = route_decision_summary(state, progress, fingerprints, idea_map, pattern_scan)
     runtime_feedback = runtime_referee_feedback(project)
-    audit["runtime_evidence_ready"] = not runtime_feedback["invalid_computation_artifacts"]
+    audit["runtime_evidence_ready"] = not (
+        runtime_feedback["invalid_computation_artifacts"]
+        or runtime_feedback["invalid_formal_artifacts"]
+        or runtime_feedback["runtime_errors"]
+    )
+    audit["frontier_evidence_ready"] = not novel_problem["frontier_scan_needed"]
     audit["decomposition_ready"] = not decomposition["blocks_progress"]
     if not audit["runtime_evidence_ready"]:
         audit["ready_for_final_proof"] = False
     if not audit["decomposition_ready"]:
         audit["ready_for_final_proof"] = False
+    if not audit["frontier_evidence_ready"]:
+        audit["ready_for_final_proof"] = False
 
     actions = []
+    actions.extend(runtime_feedback["runtime_errors"])
+    for artifact in runtime_feedback["invalid_formal_artifacts"]:
+        actions.append(
+            f"Formal evidence repair for {artifact['node_id']}: " + "; ".join(artifact["errors"])
+        )
     if runtime_feedback["invalid_computation_artifacts"]:
         invalid_ids = ", ".join(
             item["artifact_id"] for item in runtime_feedback["invalid_computation_artifacts"][:3]
@@ -1542,6 +1634,8 @@ def print_human(result: dict) -> None:
     print(f"- invalid_computation_artifacts: {referee['invalid_computation_artifacts']}")
     print(f"- superseded_computation_artifacts: {referee['superseded_computation_artifacts']}")
     print(f"- computation_warnings: {referee['computation_warnings']}")
+    print(f"- runtime_errors: {referee['runtime_errors']}")
+    print(f"- invalid_formal_artifacts: {referee['invalid_formal_artifacts']}")
     novel = result["novel_problem"]
     print("novel problem discovery:")
     print(f"- activated: {novel['activated']}")

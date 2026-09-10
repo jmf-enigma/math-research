@@ -45,9 +45,10 @@ Move upward only after recording the result in `LEDGER.md`.
    - preserve solved or structurally sound proof nodes;
    - replace only the failing block with a named sublemma or helper DAG;
    - keep compact repair state: statement, dependencies, previous attempt, feedback, and suggested fix.
-7. Theorem repair:
-   - if a counterexample exists, mark the original claim `refuted`;
-   - otherwise propose the weakest extra assumption or weaker conclusion that makes the lemma true;
+7. Scope the witness, then consider theorem repair:
+   - mark the original claim `refuted` only when a checked witness satisfies every original assumption and violates its conclusion;
+   - a counterexample to a child lemma or encoding refutes only that target: repair/drop the child or correct the encoding, and preserve independent parent components;
+   - if the original theorem needs repair, propose the weakest extra assumption or weaker conclusion, keeping its original status explicit;
    - ask the user only when the repair changes the economic/modeling meaning.
 8. Stop/report:
    - inspect the approach-family registry first; if one underexplored family still has a cheap high-decision probe, run that single bounded probe before stopping;

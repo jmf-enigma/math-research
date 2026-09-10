@@ -54,7 +54,9 @@ Node evidence may be `candidate`, `counterexample-tested`, `proved`, `tool-check
 
 ## Discovery Overlay
 
-Discovery is a mode overlay, not a mandatory state for ordinary proofs. When the answer or central object is unknown, pause before `S3`. First complete an external frontier scan with queries, cutoff date, verified source anchors, closest results, active-work signals, and the exact unresolved gap; model memory alone is not status evidence. Then define a candidate representation, validity gate, evaluator, simplification ladder, holdouts, promotion criterion, and budget. After one candidate passes those gates, freeze it as a fixed theorem statement and resume at `S1` or `S2`. If no defensible evaluator exists, use bounded conceptual exploration or ask for steering instead of running an open-ended candidate loop.
+Discovery is a mode overlay, not a mandatory state for ordinary proofs. When a fixed claim lacks a central object or invariant, use one bounded structural-discovery move and a decisive local check; the original theorem remains fixed. Retrieve a close premise only when it could resolve the named obstruction. A missing proof object does not require a literature-frontier audit.
+
+When classifying a result as known, open, or new, or claiming a research contribution, use a bounded external frontier scan with queries, cutoff date, verified source anchors, closest results, and the exact unresolved gap; model memory alone is not status evidence. If the answer itself is unknown and broad candidate search is justified, first define its representation, validity gate, evaluator, simplification ladder, holdouts, promotion criterion, and budget. After one candidate passes those gates, freeze the answer as a fixed theorem statement and resume at `S1` or `S2`. If no defensible evaluator exists, use bounded conceptual exploration or ask for steering instead of running an open-ended candidate loop.
 
 ## Research-Level Overlay
 

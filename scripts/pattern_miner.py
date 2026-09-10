@@ -124,7 +124,7 @@ def print_analysis(values: list[Fraction], start: int) -> None:
     print("proof-use hints")
     print("- If differences stabilize, try induction or telescoping on the last nonconstant difference.")
     print("- If ratios stabilize, try multiplicative potential, log transform, or change of measure.")
-    print("- Promote only the pattern whose own holdout or independent certificate passes.")
+    print("- A holdout supports selecting a conjecture; promotion to a theorem requires a proof at the claimed scope.")
 
 
 def main() -> int:

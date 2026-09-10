@@ -43,7 +43,7 @@ Classify where the proof failed before choosing a repair:
 5. Rank the next move by decision value: kernel proof/refutation, counterexample, certificate, retrieval, representation change, or theorem repair.
 6. Try to refute that small version.
 7. If true, promote it to a named lemma and prove it separately.
-8. If false, repair the theorem statement before continuing.
+8. If false, identify whether the witness refutes the original theorem, a child lemma, or an encoding. Repair/drop the refuted child or correct the encoding; repair the original theorem only when its own assumptions and conclusion are the issue.
 
 ## Red Flags
 

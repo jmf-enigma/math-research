@@ -284,7 +284,7 @@ def build_codex_command(
 
 def prepare_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any], list[str]]:
     project = project_path(args.project)
-    ensure_runtime(project)
+    state = ensure_runtime(project)
     proof_path = project_local_file(project, args.proof)
     proof = proof_path.read_text(encoding="utf-8")
     if not proof.strip():
@@ -296,7 +296,7 @@ def prepare_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any], list[st
     ):
         raise ValueError("allowed priors exceed the bounded referee packet limit")
 
-    claim = read_claim(project)
+    claim = state["claim"]
     acceptance_contract = read_acceptance_contract(project)
     if len(claim.encode("utf-8")) > MAX_CLAIM_BYTES:
         raise ValueError("claim exceeds the 32 KiB referee limit")
@@ -315,7 +315,10 @@ def prepare_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any], list[st
         "schema_version": 1,
         "run_id": run_id,
         "claim": claim,
+        "claim_sha256": state["claim_sha256"],
+        "claim_revision": state.get("claim_revision", 0),
         "acceptance_contract": acceptance_contract,
+        "acceptance_contract_sha256": sha256_text(acceptance_contract),
         "allowed_priors": args.allowed_prior,
         "candidate_proof": proof,
         "candidate_kind": candidate_kind,
@@ -348,8 +351,32 @@ def prepare_run(args: argparse.Namespace) -> tuple[Path, dict[str, Any], list[st
             "candidate_proof_sha256": packet["candidate_proof_sha256"],
             "candidate_kind": candidate_kind,
         },
+        expected_claim=(packet["claim_sha256"], packet["claim_revision"]),
     )
     return run_dir, packet, command
+
+
+def check_prepared_inputs(project: Path, run_dir: Path, packet: dict[str, Any]) -> None:
+    """Fence both standalone and loop reviews to the prepared input identity."""
+    state = ensure_runtime(project)
+    if (
+        packet.get("claim"), packet.get("claim_sha256"), packet.get("claim_revision")
+    ) != (state["claim"], state["claim_sha256"], state.get("claim_revision", 0)):
+        raise ValueError("the theorem changed after the referee packet was prepared")
+    contract_hash = sha256_text(packet["acceptance_contract"])
+    if (packet.get("acceptance_contract_sha256") != contract_hash
+        or contract_hash != sha256_text(read_acceptance_contract(project))):
+        raise ValueError("the acceptance contract changed after the referee packet was prepared")
+    proof_path = project_local_file(project, packet["candidate_proof_source"])
+    proof_hash = sha256_text(packet["candidate_proof"])
+    if (packet["candidate_proof_sha256"] != proof_hash
+        or sha256_text(proof_path.read_text(encoding="utf-8")) != proof_hash):
+        raise ValueError("the candidate changed after the referee packet was prepared")
+    for item in packet["references"]:
+        source = project_local_file(project, item["source_path"])
+        copied = project_local_file(run_dir, item["path"])
+        if sha256_file(source) != item["sha256"] or sha256_file(copied) != item["sha256"]:
+            raise ValueError("a reference changed after the referee packet was prepared")
 
 
 def terminate_process_group(process: subprocess.Popen[str]) -> None:
@@ -376,13 +403,14 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
     if not isinstance(payload, dict):
         raise ValueError("referee output must be a JSON object")
     problems: list[str] = []
+    schema_problems: list[str] = []
     allowed_fields = set(VERIFICATION_SCHEMA["properties"])
     unexpected = sorted(set(payload) - allowed_fields)
     if unexpected:
-        problems.append(f"unexpected fields: {', '.join(unexpected)}")
+        schema_problems.append(f"unexpected fields: {', '.join(unexpected)}")
     verdict = payload.get("verdict")
-    if verdict not in {"correct", "wrong", "uncertain"}:
-        problems.append("invalid or missing verdict")
+    if not isinstance(verdict, str) or verdict not in {"correct", "wrong", "uncertain"}:
+        schema_problems.append("invalid or missing verdict")
     failure_kind = payload.get("failure_kind")
     allowed_failure_kinds = {
         "central-mechanism-failure",
@@ -396,52 +424,55 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
         "tool-evidence-gap",
         "referee-runtime",
     }
-    if failure_kind not in allowed_failure_kinds:
-        problems.append("invalid or missing failure_kind")
+    if not isinstance(failure_kind, str) or failure_kind not in allowed_failure_kinds:
+        schema_problems.append("invalid or missing failure_kind")
     critical = payload.get("critical_errors")
     gaps = payload.get("gaps")
     if not isinstance(critical, list):
-        problems.append("critical_errors must be an array")
+        schema_problems.append("critical_errors must be an array")
         critical = []
     if not isinstance(gaps, list):
-        problems.append("gaps must be an array")
+        schema_problems.append("gaps must be an array")
         gaps = []
     if verdict == "correct" and (critical or gaps):
         problems.append("correct verdict conflicts with nonempty errors or gaps")
     if not isinstance(payload.get("summary"), str):
-        problems.append("summary must be a string")
+        schema_problems.append("summary must be a string")
     status_blocks: dict[str, dict[str, Any]] = {}
     for field in ["claim_fidelity", "assumption_coverage"]:
         block = payload.get(field)
         if not isinstance(block, dict):
-            problems.append(f"{field} must be an object")
+            schema_problems.append(f"{field} must be an object")
             status_blocks[field] = {}
-        elif block.get("status") not in {"pass", "fail", "uncertain"} or not isinstance(
+        elif set(block) != {"status", "issue"} or not isinstance(block.get("status"), str) or block.get("status") not in {"pass", "fail", "uncertain"} or not isinstance(
             block.get("issue"), str
         ):
-            problems.append(f"{field} has invalid status or issue")
+            schema_problems.append(f"{field} has invalid status or issue")
             status_blocks[field] = block
         else:
             status_blocks[field] = block
     first_error = payload.get("first_error")
-    if not isinstance(first_error, dict) or not all(
+    if not isinstance(first_error, dict) or set(first_error) != {"location", "issue"} or not all(
         isinstance(first_error.get(field), str) for field in ["location", "issue"]
     ):
-        problems.append("first_error must contain string location and issue")
+        schema_problems.append("first_error must contain string location and issue")
         first_error = {}
     for field, entries in [("critical_errors", critical), ("gaps", gaps)]:
         if not all(
             isinstance(entry, dict)
+            and set(entry) == {"location", "issue"}
             and isinstance(entry.get("location"), str)
             and isinstance(entry.get("issue"), str)
             for entry in entries
         ):
-            problems.append(f"{field} entries must contain string location and issue")
+            schema_problems.append(f"{field} entries must contain string location and issue")
     repair_hints = payload.get("repair_hints")
     if not isinstance(repair_hints, list) or not all(
         isinstance(item, str) for item in repair_hints
     ):
-        problems.append("repair_hints must be an array of strings")
+        schema_problems.append("repair_hints must be an array of strings")
+    if schema_problems:
+        raise ValueError("invalid referee output schema: " + "; ".join(schema_problems))
     if verdict == "correct":
         if failure_kind != "none":
             problems.append("correct verdict requires failure_kind none")
@@ -516,6 +547,7 @@ def record_referee_failure(
             "process_status": status,
             "return_code": return_code,
         },
+        expected_claim=(packet["claim_sha256"], packet["claim_revision"]),
     )
 
 
@@ -526,6 +558,8 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
     packet_text = packet_path.read_text(encoding="utf-8")
     packet_hash = sha256_text(packet_text)
     packet = json.loads(packet_text)
+    project = project_path(args.project)
+    check_prepared_inputs(project, run_dir, packet)
     stdout_path = run_dir / "codex.stdout.log"
     stderr_path = run_dir / "codex.stderr.log"
     timed_out = False
@@ -544,6 +578,7 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
             terminate_process_group(process)
     if sha256_text(packet_path.read_text(encoding="utf-8")) != packet_hash:
         raise ValueError("referee packet changed during review; pending verification must be repeated")
+    check_prepared_inputs(project, run_dir, packet)
     if timed_out:
         record_referee_failure(
             args,
@@ -623,6 +658,9 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
         "web_search": "disabled",
         "same_model_independence_is_not_formal_proof": True,
         "packet_sha256": packet_hash,
+        "claim_sha256": packet["claim_sha256"],
+        "claim_revision": packet["claim_revision"],
+        "acceptance_contract_sha256": packet["acceptance_contract_sha256"],
         "validation_errors": controller_errors,
     }
     atomic_write_json(output_path, payload)
@@ -638,6 +676,7 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
             "candidate_proof_source": packet.get("candidate_proof_source"),
             "candidate_proof_sha256": packet["candidate_proof_sha256"],
             "candidate_kind": packet.get("candidate_kind", "proof"),
+            "acceptance_contract_sha256": packet["acceptance_contract_sha256"],
             "verdict": payload.get("verdict"),
             "failure_kind": payload.get("failure_kind"),
             "claim_fidelity_status": payload.get("claim_fidelity", {}).get("status"),
@@ -646,6 +685,7 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
             "repair_hints": payload.get("repair_hints", [])[:3],
             "controller_validation_errors": controller_errors,
         },
+        expected_claim=(packet["claim_sha256"], packet["claim_revision"]),
     )
     return payload
 

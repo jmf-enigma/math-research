@@ -128,18 +128,18 @@ def validate_command_inputs(
         raise ValueError("artifact input descriptors are invalid")
     if not input_files:
         raise ValueError("record at least one project-local input script with --input")
-    script_paths = {
-        (project / descriptor["path"]).resolve()
-        for descriptor in input_files
-        if Path(descriptor["path"]).suffix.lower() in SCRIPT_SUFFIXES
-    }
+    recorded_paths = {project_local_path(project, item["path"]) for item in input_files}
+    script_paths = {path for path in recorded_paths if path.suffix.lower() in SCRIPT_SUFFIXES}
     if not script_paths:
         raise ValueError(
             "at least one recorded input must be a .py, .wl, .wls, .sage, or .lean script"
         )
     command_paths: set[Path] = set()
+    command_files: set[Path] = set()
     for item in command[1:]:
-        if item.startswith("-"):
+        if item.startswith("--") and "=" in item:
+            item = item.split("=", 1)[1]
+        elif item.startswith("-"):
             continue
         candidate = Path(item).expanduser()
         if not candidate.is_absolute():
@@ -150,11 +150,19 @@ def validate_command_inputs(
             continue
         if resolved.is_relative_to(project):
             command_paths.add(resolved)
+        if resolved.is_file() or resolved.suffix.lower() in SCRIPT_SUFFIXES:
+            if not resolved.is_relative_to(project):
+                raise ValueError(f"command file dependency must remain inside the proof project: {item}")
+            command_files.add(resolved)
     if script_paths.isdisjoint(command_paths):
         raise ValueError(
             "the command must name at least one recorded project-local script; inline expressions "
             "and unrecorded scripts are rejected"
         )
+    unrecorded = command_files - recorded_paths
+    if unrecorded:
+        paths = ", ".join(sorted(relative_to_project(project, path) for path in unrecorded))
+        raise ValueError(f"command file dependencies must be recorded with --input: {paths}")
 
 
 def normalize_stdout(value: str) -> str:
@@ -427,10 +435,22 @@ def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[st
             "latest_replay_id": None,
             "errors": [str(exc)],
             "warnings": [],
+            "claim_scope_sha256": None,
         }
 
     errors = verify_inputs(project, artifact)
-    errors.extend(verify_artifact_spec(project, artifact))
+    spec_errors = verify_artifact_spec(project, artifact)
+    errors.extend(spec_errors)
+    scope = {key: artifact.get(key) for key in (
+        "project_claim_sha256", "claim_id", "local_claim", "assumptions", "result_kind", "comparison",
+    )}
+    claim_scope_sha256 = sha256_text(canonical_json(scope)) if not spec_errors else None
+    try:
+        command = parse_command(json.dumps(artifact.get("command")))
+        cwd = project_local_path(project, artifact.get("cwd", "."))
+        validate_command_inputs(project, cwd, command, artifact.get("input_files", []))
+    except (OSError, ValueError) as exc:
+        errors.append(str(exc))
     if artifact.get("project_claim_sha256") != state["claim_sha256"]:
         errors.append("project claim changed after the computation was recorded")
     try:
@@ -524,6 +544,7 @@ def audit_artifact(project_raw: str | Path, artifact_id_or_path: str) -> dict[st
         "latest_replay_id": latest_replay_id,
         "errors": errors,
         "warnings": warnings,
+        "claim_scope_sha256": claim_scope_sha256,
     }
 
 
@@ -547,12 +568,19 @@ def supersede_artifact(args: argparse.Namespace) -> dict[str, Any]:
     if not replacement_audit["valid"]:
         details = "; ".join(replacement_audit["errors"])
         raise ValueError(f"replacement artifact is not currently valid: {details}")
+    if args.artifact == replacement_audit["artifact_id"]:
+        raise ValueError("an artifact cannot supersede itself")
+    source_audit = audit_artifact(project, args.artifact)
+    if (not source_audit.get("claim_scope_sha256")
+        or source_audit["claim_scope_sha256"] != replacement_audit.get("claim_scope_sha256")):
+        raise ValueError("replacement must have the same recorded local claim, assumptions, and evidence scope")
 
     record = {
         "event_type": "computation_superseded",
         "artifact_id": args.artifact,
         "replacement_artifact_id": replacement_audit["artifact_id"],
         "replacement_claim_id": replacement_audit["claim_id"],
+        "claim_scope_sha256": source_audit["claim_scope_sha256"],
         "reason": reason,
     }
     append_record(project, "computations", record)

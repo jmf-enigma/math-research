@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 
@@ -18,10 +19,11 @@ FIELDS = [
     "failure_witness",
     "missing_assumption",
 ]
+FAILED_STATUSES = {"failed", "retired", "refuted", "失败", "已退役", "已反驳"}
 
 
 def norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    return " ".join(unicodedata.normalize("NFC", text).split())
 
 
 def parse_index(text: str) -> list[dict[str, str]]:
@@ -68,7 +70,17 @@ def field_match(a: str, b: str) -> bool:
     nb = norm(b)
     if not na or not nb:
         return False
-    return na == nb or na in nb or nb in na
+    return bool(na) and na == nb
+
+
+def exact_failed_repeat(proposed: dict[str, str], entry: dict[str, str]) -> bool:
+    if entry["status"].strip().casefold() not in FAILED_STATUSES:
+        return False
+    if not all(norm(proposed.get(field, "")) for field in ("route_family", "central_object", "target_lemma")):
+        return False
+    if not any(norm(proposed.get(field, "")) for field in ("failure_witness", "missing_assumption")):
+        return False
+    return all(norm(proposed.get(field, "")) == norm(entry.get(field, "")) for field in FIELDS)
 
 
 def score_attempt(proposed: dict[str, str], entry: dict[str, str]) -> tuple[int, list[str]]:
@@ -127,21 +139,28 @@ def main() -> int:
                     "status": entry["status"],
                     "score": score,
                     "matched_fields": hits,
+                    "exact_failed_repeat": exact_failed_repeat(proposed, entry),
                     "new_evidence_expected": entry.get("new_evidence_expected", ""),
                     "retry_allowed_only_if": entry["retry_allowed_only_if"],
                 }
             )
     matches.sort(key=lambda item: item["score"], reverse=True)
+    delta = args.new_delta.strip()
+    repeat = any(item["exact_failed_repeat"] for item in matches)
     decision = "allow"
-    if matches and not args.new_delta:
+    if repeat and not delta:
         decision = "block-repeat"
-    elif matches:
+    elif repeat:
         decision = "allow-with-delta"
+    elif matches:
+        decision = "review-similar"
     result = {
         "decision": decision,
         "recorded_fingerprints": len(entries),
         "matches": matches[:5],
-        "new_delta": args.new_delta,
+        "new_delta": delta,
+        "proof_effect": "none",
+        "match_scope": "Textual fingerprints only; inspect mathematical equivalence and any proposed change.",
     }
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
@@ -156,8 +175,8 @@ def main() -> int:
                     print(f"  new_evidence_expected: {item['new_evidence_expected']}")
                 if item["retry_allowed_only_if"]:
                     print(f"  retry_allowed_only_if: {item['retry_allowed_only_if']}")
-        if args.new_delta:
-            print(f"new_delta: {args.new_delta}")
+        if delta:
+            print(f"new_delta: {delta}")
     return 0
 
 

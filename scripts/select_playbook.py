@@ -90,7 +90,7 @@ def score(text: str, keywords: list[str]) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Suggest theory proof workbench playbooks.")
+    parser = argparse.ArgumentParser(description="Suggest Math Research playbooks.")
     parser.add_argument("claim", nargs="+", help="Claim or topic text")
     args = parser.parse_args()
     text = " ".join(args.claim)

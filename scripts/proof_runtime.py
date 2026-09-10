@@ -374,8 +374,15 @@ def ensure_runtime(project: str | Path) -> dict[str, Any]:
     return state
 
 
-def _append_record(root: Path, channel: str, record: dict[str, Any]) -> dict[str, Any]:
+def _append_record(
+    root: Path, channel: str, record: dict[str, Any],
+    *, expected_claim: tuple[str, int] | None = None,
+) -> dict[str, Any]:
     state = read_state(root)
+    if expected_claim is not None and expected_claim != (
+        state["claim_sha256"], state.get("claim_revision", 0)
+    ):
+        raise ValueError("the theorem changed before the prepared record could be appended")
     if channel not in CHANNELS:
         raise ValueError(f"unknown runtime channel {channel!r}; choose from {', '.join(CHANNELS)}")
     if not isinstance(record, dict):
@@ -405,10 +412,12 @@ def append_record(
     project: str | Path,
     channel: str,
     record: dict[str, Any],
+    *,
+    expected_claim: tuple[str, int] | None = None,
 ) -> dict[str, Any]:
     root = project_path(project)
     ensure_runtime(root)
-    return _append_record(root, channel, record)
+    return _append_record(root, channel, record, expected_claim=expected_claim)
 
 
 def update_state(
@@ -451,6 +460,38 @@ def update_state(
     atomic_write_json(state_path(root), state)
     _append_record(root, "events", {"event_type": "state_updated", "changes": changes})
     return read_state(root)
+
+
+def invalidate_acceptance(
+    project: str | Path, reason: str, *, previous_result: dict[str, Any] | None = None,
+    accepted_statuses: set[str] | None = None,
+) -> dict[str, Any]:
+    """Clear stale active acceptance while retaining its historical evidence."""
+    root = project_path(project)
+    state = ensure_runtime(root)
+    eligible = accepted_statuses if accepted_statuses is not None else {
+        "referee-accepted", "human-proof", "tool-checked", "formalized-local", "formalized-complete",
+    }
+    if state["proof_status"] not in eligible:
+        return state
+    previous_evidence = state.get("evidence_summary")
+    previous_artifact = state.get("last_decisive_artifact")
+    append_record(root, "events", {
+        "event_type": "acceptance_invalidated",
+        "reason": reason,
+        "previous_result": previous_result,
+        "previous_evidence_summary": previous_evidence,
+        "previous_artifact": previous_artifact,
+    })
+    return update_state(
+        root, proof_status="unresolved", current_node="pending verification",
+        last_decisive_artifact="", evidence_summary={
+            "disposition": "pending", "basis": reason,
+            "previous_result": (previous_result or {}).get("artifact_descriptor"),
+            "previous_artifact": previous_artifact,
+            "human_reviewed": False, "formal_verification": False,
+        },
+    )
 
 
 def revise_claim(project: str | Path, reason: str) -> dict[str, Any]:

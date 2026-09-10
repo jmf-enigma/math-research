@@ -73,14 +73,18 @@ Write these before proving:
 
 ## Templates
 
-Bellman certificate for maximization:
+Bellman certificate for bounded discounted maximization:
+
+Assume a well-defined MDP with bounded measurable reward `r` and discount `0 <= beta < 1`. Let `V` be bounded and measurable, and let `pi` be an admissible measurable stationary policy, with `pi(s) in A(s)` for every state.
 
 ```text
-Find V and policy pi such that
+Verify for every state s:
 V(s) = r(s,pi(s)) + beta E[V(s' | s,pi(s))]
-V(s) >= r(s,a) + beta E[V(s' | s,a)] for all a.
-Then pi is optimal.
+V(s) >= r(s,a) + beta E[V(s' | s,a)] for all a in A(s).
+Then pi is optimal for expected total discounted reward among admissible policies.
 ```
+
+The proof iterates these relations over a finite horizon and then uses `beta^T E[V(S_T)] -> 0`, which boundedness guarantees for every admissible policy. For unbounded rewards or `V`, separately establish integrability of the conditional expectations and finite-horizon identities, justify passage to the infinite return under the stated reward criterion, and prove the needed tail/transversality conditions for the candidate and comparison policies. Vanishing `beta^T E_s^sigma[V(S_T)]` for every compared policy `sigma` is a sufficient tail condition for this argument; any weaker one-sided condition needs its own verification argument. The displayed Bellman relations alone do not justify the unbounded extension.
 
 Threshold proof:
 

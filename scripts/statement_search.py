@@ -35,7 +35,7 @@ SERVICE_CONFIG = {
     },
 }
 SCHEMA_VERSION = "statement-retrieval/v1"
-USER_AGENT = "CodexTheoryProofWorkbench/1.0 (mathematical retrieval)"
+USER_AGENT = "MathResearch/1.0 (mathematical retrieval)"
 MAX_QUERY_CHARS = 6000
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 VALID_INTENTS = (

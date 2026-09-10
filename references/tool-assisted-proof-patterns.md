@@ -14,7 +14,7 @@ Use this for hard proofs where computation, CAS, SMT, optimization solvers, or L
 - **Lean/Goedel blueprint pattern**: maintain a human-readable proof map and a machine-checkable or reviewer-checkable dependency graph. Each node has a statement, statement dependencies, proof dependencies, downstream use, status, and failure diagnosis. Prove or check ready leaves on the current theorem path before side lemmas unless explicitly rewiring the graph.
 - **Cost-aware tool routing**: after repeated failed tool or Lean attempts, decide whether the next run has positive value. Continue only if the expected artifact is new: counterexample, exact condition, certificate, smaller subgoal, retrieved premise, or theorem repair.
 - **Flyspeck pattern**: combine a human proof with formal verification and external computations only when every computational step has a checked certificate or proof object.
-- **CAS refutation pattern**: before simplifying a theorem, ask for a counterexample to the theorem's negation under explicit domains.
+- **CAS refutation pattern**: under the claim's explicit assumptions and domains, ask for a satisfying instance of its negation. Identify whether the claim is the original theorem, a child lemma, or an encoding.
 - **Certificate pattern**: prefer certificates that can be independently checked: dual variables, KKT conditions, exact rational identities, interval bounds, SMT models/unsat cores, or Lean proof terms.
 - **Rethlas-style replay pattern**: keep computation outside the prose transcript. Save the exact local claim, assumptions, backend and version, script hashes, executable fingerprint, output comparator, evidence level, and replay result so a verifier can inspect the same artifact.
 - **Premise-retrieval pattern**: when a lemma feels standard, search for the nearest theorem pattern or library lemma before inventing a new proof.
@@ -56,7 +56,7 @@ If the expected artifact is only "numerical evidence," the step is not proof-rea
 ## Default Tool Loop
 
 1. **Normalize** the claim: remove ambiguous notation, name domains, list boundary cases.
-2. **Refute first**: test the negation in the smallest scalar, finite, boundary, or relaxed-assumption model.
+2. **Refute first**: test the negation in the smallest admissible scalar, finite, or boundary model. A relaxed-assumption test diagnoses that assumption; its witness refutes the original claim only if all original assumptions still hold.
 3. **Guess a pattern if needed**: use exact small cases, active sets, coefficient sequences, symbolic simplification, or optimized witnesses to infer a construction, invariant, or algebra normal form. If the evidence is a sequence, run `scripts/pattern_miner.py` before treating the guess as a candidate lemma.
 4. **Hold out a case**: test at least one small case that was not used to guess the pattern.
 5. **Shrink** the theorem into one or more tool-checkable lemmas.
@@ -95,13 +95,15 @@ python3 scripts/computation_artifact.py audit path/to/project ARTIFACT_ID
 
 The runner uses no shell, allows only named math backends, requires an installed executable outside the project, verifies input and executable fingerprints, applies a timeout with process-group cleanup, and records stdout and stderr. `audit` additionally checks that the artifact still lives in the current project, its hashes and latest replay files agree, and its latest passed replay has a matching runtime event. A copied JSON summary or stale ledger event is not a live artifact. It executes trusted proof-project scripts; it is an audit and replay boundary, not a sandbox for hostile code. Exact counterexamples, symbolic identities, condition sets, and solver certificates must match a canonical expected stdout; `exit-only` is retained only for numerical exploration, unclassified runs, or formal-tool process checks and never establishes a mathematical output by itself. `numerical-evidence` remains conjectural, and every symbolic, solver, or formal result remains a candidate artifact until translated and independently checked.
 
-When a new artifact genuinely covers an old one, record and replay the replacement first, then preserve the append-only history with `computation_artifact.py supersede PROJECT OLD_ID --replacement NEW_ID --reason "COVERAGE ARGUMENT"`. The command accepts only a currently valid replacement; the reason remains a semantic obligation for the proof reviewer.
+Record every command-named file dependency with `--input`, including secondary scripts, data files, and paths supplied as `--option=path`. Imported modules, files opened inside scripts, and backend environment dependencies still need an explicit input or environment record; the runner does not discover those automatically. Keep generated outputs distinct from command arguments treated as input files.
+
+When a new artifact covers the same local claim, record and replay it first, then preserve the append-only history with `computation_artifact.py supersede PROJECT OLD_ID --replacement NEW_ID --reason "COVERAGE ARGUMENT"`. The replacement must be currently valid and match the recorded project claim, local claim ID/text, assumptions, result kind, and comparison mode. Stale inputs or replays may be replaced; the old immutable specification must remain verifiable. A result for a different lemma needs a separate explicit derivation of the old claim before it can count as coverage. The reason still requires mathematical inspection.
 
 For an aggregate checker, do not trust a final summary token alone. The driver must reject every child timeout, nonzero exit, exact-output mismatch, and unexpected child stderr, then exit nonzero itself. Record the manifest, all child scripts, canonical expected output, and the driver as inputs. This makes a batch pass an auditable conjunction of local checks rather than a wrapper that can hide a failed child.
 
 ## Artifact Translation
 
-- `FindInstance` returns an instance: the theorem is false under current assumptions.
+- `FindInstance` returns an admissible witness to the negation: the exact encoded claim is false. A witness against a child lemma or encoding refutes only that target; an original-theorem refutation must satisfy every original assumption and violate its conclusion.
 - `FindInstance` returns `{}`: no counterexample found in that theory/search scope; not a proof unless the backend solved the quantified formula completely.
 - `Reduce`/`Resolve` gives conditions: these are candidate assumptions or case splits, not prose by themselves.
 - `FullSimplify[..., assumptions] == True`: a proof-critical algebraic step is strongly checked under those assumptions; still state the algebraic lemma.

@@ -88,7 +88,7 @@ The generator receives a compact packet and works on one route. A complete proof
 
 Use `--prepare-only` to inspect the first packet without invoking another model. Use `--allow-search` only for public or safely abstracted mathematics; it permits one search turn only after the generator names retrieval as the current obstruction. Add checked project-local evidence with `--reference path/to/artifact` and resume the same project.
 
-Execution resumes from a checkpoint: theorem and acceptance-contract identity, selected plan, pending repair or verification, first error, and reference hashes survive budget boundaries. A waiting run makes no new model call until evidence arrives or its contract changes. Completed results require matching candidate, referee packet, report, and reference hashes; changed obligations trigger review again. See [recovery and migration](references/runtime-recovery.md).
+Execution resumes from a checkpoint: theorem and acceptance-contract identity, selected plan, pending repair or verification, first error, and reference hashes survive budget boundaries. A waiting run makes no new model call until evidence arrives or its contract changes. Completed results require matching candidate, referee packet, report, and reference hashes; changed obligations trigger review again. Failed routes are hard exclusions only under the same acceptance obligations; older failures remain search hints. See [recovery and migration](references/runtime-recovery.md).
 
 The default reasoning effort is `high`. Reserve `--reasoning-effort max` for a genuinely hard kernel. Iteration and wall-time limits still bound the run.
 
@@ -143,6 +143,9 @@ python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
 PYTHONPYCACHEPREFIX=/tmp/codex-pycache python3 -m py_compile scripts/*.py
 python3 scripts/smoke_proof_loop.py
 python3 scripts/test_proof_loop_recovery.py
+python3 scripts/test_attempt_matching.py
+python3 scripts/test_computation_scope.py
+python3 scripts/test_evidence_lifecycle.py
 python3 scripts/smoke_workbench.py
 ```
 

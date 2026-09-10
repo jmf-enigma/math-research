@@ -19,6 +19,7 @@ from typing import Any
 from proof_runtime import (
     append_record,
     ensure_runtime,
+    invalidate_acceptance,
     iter_channel,
     project_path,
     read_state,
@@ -117,6 +118,70 @@ def statement_from_args(args: argparse.Namespace, project: Path) -> tuple[str, d
     return value, source
 
 
+def validate_statement_source(project: Path, node: dict[str, Any]) -> None:
+    source = node.get("statement_source")
+    if not isinstance(source, dict) or source.get("kind") not in {"inline", "project-file"}:
+        raise ValueError("Lean handoff has no valid frozen statement source")
+    if source["kind"] == "project-file":
+        path, _ = inside_project(project, str(source.get("path", "")))
+        if (
+            not path.is_file()
+            or sha256_file(path) != source.get("sha256")
+            or path.read_text(encoding="utf-8").strip() != node.get("statement")
+        ):
+            raise ValueError("stale Lean handoff: the frozen statement source changed or is missing")
+
+
+def target_binding(project: Path, packet: dict[str, Any]) -> dict[str, Any]:
+    """Bind human fidelity/assembly gates to the actual project formal sources."""
+    target = packet["lean_target"]
+    lean_path, lean_rel = inside_project(project, str(target["file"]))
+    files: dict[str, str] = {}
+    # Local imports and project configuration can change a target's meaning even
+    # when the final file does not. Package caches are audited as environment
+    # dependencies; avoid walking their large generated trees on each local check.
+    configuration = {"lean-toolchain", "lakefile.lean", "lakefile.toml", "lake-manifest.json"}
+    for directory, dirs, names in os.walk(project):
+        dirs[:] = [name for name in dirs if name not in {".git", ".proof_runtime", ".lake", "__pycache__"}]
+        for name in names:
+            if not name.endswith(".lean") and name not in configuration:
+                continue
+            path, relative = inside_project(project, Path(directory) / name)
+            files[relative] = sha256_file(path)
+    return {
+        "lean_file": lean_rel,
+        "lean_file_sha256": sha256_file(lean_path),
+        "target_name": target["name"],
+        "target_kind": target["kind"],
+        "local_formal_files": files,
+    }
+
+
+def invalidate_completed_request(project: Path, request_relative: str, reason: str) -> None:
+    """Revoke only completion supplied by the request being rechecked."""
+    state = read_state(project)
+    if state.get("proof_status") != "formalized-complete":
+        return
+    summary = state.get("evidence_summary")
+    summary = summary if isinstance(summary, dict) else {}
+    result_relative = summary.get("formal_result_path") or state.get("last_decisive_artifact")
+    if not isinstance(result_relative, str):
+        return
+    result_path, _ = inside_project(project, result_relative)
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        result = {}
+    if not isinstance(result, dict) or result.get("request_path") != request_relative:
+        return
+    invalidate_acceptance(
+        project,
+        reason,
+        previous_result=result,
+        accepted_statuses={"formalized-complete"},
+    )
+
+
 def prepare(args: argparse.Namespace) -> int:
     project = project_path(args.project)
     ensure_runtime(project)
@@ -174,6 +239,11 @@ def prepare(args: argparse.Namespace) -> int:
             "handoff_id": handoff_id,
             "claim_sha256": state["claim_sha256"],
             "request_packet_sha256": packet["packet_sha256"],
+            "target_binding": (
+                target_binding(project, packet)
+                if (project / lean_file).is_file()
+                else None
+            ),
             "checks": {
                 name: {"status": "not-audited", "evidence": ""}
                 for name in (
@@ -239,6 +309,50 @@ def first_result(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(results, list) or not results or not isinstance(results[0], dict):
         raise ValueError("lean_status.py returned no structured file result")
     return results[0]
+
+
+def validate_checker_result(
+    payload: dict[str, Any], lean_path: Path, target_name: str, target_kind: str
+) -> dict[str, Any]:
+    """Require affirmative, typed evidence instead of defaulting absent gates to success."""
+    scan = first_result(payload)
+    if len(payload["results"]) != 1 or type(payload.get("exit_code")) is not int:
+        raise ValueError("malformed Lean checker result: expected one result and an integer exit_code")
+    if not isinstance(scan.get("path"), str) or Path(scan["path"]).resolve() != lean_path:
+        raise ValueError("malformed Lean checker result: checked path does not match the requested file")
+    check = scan.get("check")
+    if not isinstance(check, dict) or type(check.get("returncode")) is not int:
+        raise ValueError("malformed Lean checker result: missing compile returncode")
+    if check.get("timed_out") is not None and type(check["timed_out"]) is not bool:
+        raise ValueError("malformed Lean checker result: invalid timeout flag")
+    blockers = scan.get("blockers")
+    if (
+        not isinstance(blockers, dict)
+        or not {"sorry", "admit", "axiom", "constant", "unsafe"}.issubset(blockers)
+        or any(type(value) is not int or value < 0 for value in blockers.values())
+        or type(scan.get("total_blockers")) is not int
+        or scan["total_blockers"] != sum(blockers.values())
+    ):
+        raise ValueError("malformed Lean checker result: missing or inconsistent blocker audit")
+    missing = scan.get("missing_required_declaration_kinds")
+    declarations = scan.get("declaration_list", scan.get("declarations"))
+    if not isinstance(missing, list) or not isinstance(declarations, list):
+        raise ValueError("malformed Lean checker result: missing declaration audit")
+    if any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("kind"), str)
+        or not any(field in item for field in ("name", "full_name"))
+        or any(field in item and not isinstance(item[field], str) for field in ("name", "full_name"))
+        for item in declarations
+    ):
+        raise ValueError("malformed Lean checker result: declaration names and kinds must be strings")
+    if not missing and not any(
+        target_name in (item.get("name"), item.get("full_name"))
+        and item.get("kind") == target_kind
+        for item in declarations
+    ):
+        raise ValueError("malformed Lean checker result: claimed target is absent from declarations")
+    return scan
 
 
 def diagnostic_site(diagnostic: str) -> str:
@@ -379,9 +493,112 @@ def acceptance_passes(report: dict[str, Any] | None) -> tuple[bool, list[str]]:
     missing = []
     for name in required:
         item = checks.get(name)
-        if not isinstance(item, dict) or item.get("status") != "pass" or not str(item.get("evidence", "")).strip():
+        if (
+            not isinstance(item, dict)
+            or item.get("status") != "pass"
+            or not isinstance(item.get("evidence"), str)
+            or not item["evidence"].strip()
+        ):
             missing.append(name)
     return not missing, missing
+
+
+def refresh_acceptance_binding(
+    project: Path, packet: dict[str, Any], binding: dict[str, Any]
+) -> tuple[dict[str, Any] | None, bool]:
+    report = read_acceptance(project, packet)
+    if not report or report.get("error") or report.get("target_binding") == binding:
+        return report, False
+    path, _ = inside_project(project, report["path"])
+    payload = {key: value for key, value in report.items() if key not in {"path", "sha256"}}
+    payload["previous_audit_sha256"] = report["sha256"]
+    payload["target_binding"] = binding
+    payload["binding_updated_at_utc"] = utc_now()
+    payload["checks"] = {
+        name: {"status": "not-audited", "evidence": ""}
+        for name in ("claim_fidelity", "assumption_lineage", "assembly_coverage", "axiom_audit")
+    }
+    atomic_write_json(path, payload)
+    return read_acceptance(project, packet), True
+
+
+def audit_formal_result(project: Path, record: dict[str, Any]) -> dict[str, Any]:
+    """Read-only freshness audit of one recorded local/full formal result."""
+    errors: list[str] = []
+    promoted_full_theorem = False
+    result_relative = record.get("result_path")
+    try:
+        state = ensure_runtime(project)
+        if not isinstance(result_relative, str):
+            raise ValueError("formal record has no result path")
+        path, _ = inside_project(project, result_relative)
+        result = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(result, dict) or result.get("packet_type") != "lean-to-theory":
+            raise ValueError("invalid formal result packet")
+        promoted_full_theorem = (
+            result.get("node_role") == "full-theorem"
+            and result.get("eligible_for_formalized_complete") is True
+            and result.get("promotion_requested") is True
+        )
+        if sha256_file(path) != record.get("result_file_sha256"):
+            errors.append("formal result is changed or lacks a recorded file hash; recheck it")
+        if result.get("result_sha256") != sha256_json({
+            key: value for key, value in result.items() if key != "result_sha256"
+        }):
+            errors.append("formal result packet hash mismatch")
+        if (
+            result.get("claim_sha256") != state["claim_sha256"]
+            or result.get("claim_revision") != state.get("claim_revision", 0)
+        ):
+            errors.append("formal result belongs to a different claim revision")
+        if record.get("status") != "formalized-local" or result.get("exact_target_gate") != "pass":
+            errors.append("latest formal verification failed")
+        request_path, _ = inside_project(project, result["request_path"])
+        if sha256_file(request_path) != result.get("request_sha256"):
+            errors.append("frozen formal request changed or is missing")
+        packet = json.loads(request_path.read_text(encoding="utf-8"))
+        if not isinstance(packet, dict) or packet.get("packet_sha256") != sha256_json({
+            key: value for key, value in packet.items() if key != "packet_sha256"
+        }):
+            raise ValueError("invalid frozen formal request")
+        if not isinstance(packet.get("node"), dict) or not isinstance(packet.get("lean_target"), dict):
+            raise ValueError("invalid frozen formal node or target")
+        validate_statement_source(project, packet["node"])
+        binding = target_binding(project, packet)
+        if binding != result.get("target_binding"):
+            errors.append("formal source or project dependency changed after checking")
+        lean_path, _ = inside_project(project, binding["lean_file"])
+        scan = validate_checker_result(result["lean_status"], lean_path, binding["target_name"], binding["target_kind"])
+        if (
+            scan["check"]["returncode"] != 0
+            or scan["check"].get("timed_out", False)
+            or scan["total_blockers"] != 0
+            or scan["missing_required_declaration_kinds"]
+            or result.get("checker_exit_code") != 0
+            or result.get("checker_process_exit_code") != 0
+        ):
+            errors.append("recorded formal checker gates did not pass")
+        checker_path = Path(result["checker_command"][1])
+        if not checker_path.is_file() or sha256_file(checker_path) != result.get("checker_script_sha256"):
+            errors.append("formal checker changed or is missing")
+        if result.get("eligible_for_formalized_complete"):
+            acceptance = read_acceptance(project, packet)
+            accepted, _ = acceptance_passes(acceptance)
+            if (
+                not accepted
+                or acceptance.get("target_binding") != binding
+                or acceptance.get("sha256") != (result.get("acceptance_report") or {}).get("sha256")
+            ):
+                errors.append("full-theorem acceptance gates changed or are stale")
+    except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+        errors.append(str(exc))
+    return {
+        "node_id": record.get("node_id"),
+        "result_path": result_relative,
+        "valid": not errors,
+        "promoted_full_theorem": promoted_full_theorem,
+        "errors": list(dict.fromkeys(errors)),
+    }
 
 
 def prior_failure_count(
@@ -431,6 +648,7 @@ def verify(args: argparse.Namespace) -> int:
     target = packet.get("lean_target")
     if not isinstance(node, dict) or not isinstance(target, dict):
         raise ValueError("Lean handoff request lacks node or target data")
+    validate_statement_source(project, node)
     lean_path, lean_rel = inside_project(project, str(target.get("file", "")))
     if args.lean_file:
         override_path, override_rel = inside_project(project, args.lean_file)
@@ -439,12 +657,14 @@ def verify(args: argparse.Namespace) -> int:
     if not lean_path.is_file():
         raise ValueError(f"Lean target file not found: {lean_path}")
     lean_sha256_before = sha256_file(lean_path)
+    binding_before = target_binding(project, packet)
     target_name = str(target.get("name", ""))
     target_kind = str(target.get("kind", ""))
     if not target_name or target_kind not in TARGET_KINDS:
         raise ValueError("Lean handoff target name or kind is invalid")
 
     lean_status = locate_lean_status(args.lean_status_script)
+    checker_sha256_before = sha256_file(lean_status)
     command = [
         sys.executable,
         str(lean_status),
@@ -473,9 +693,10 @@ def verify(args: argparse.Namespace) -> int:
             "results": [
                 {
                     "path": str(lean_path),
-                    "blockers": {},
+                    "blockers": {"sorry": 0, "admit": 0, "axiom": 0, "constant": 0, "unsafe": 0},
                     "total_blockers": 0,
-                    "missing_required_declaration_kinds": [],
+                    "declaration_list": [],
+                    "missing_required_declaration_kinds": [{"name": target_name, "required_kind": target_kind}],
                     "check": {
                         "returncode": 124,
                         "stdout": stdout,
@@ -498,9 +719,18 @@ def verify(args: argparse.Namespace) -> int:
         raise ValueError("lean_status.py output must be a JSON object")
     if sha256_file(request_path) != request_sha256_before:
         raise ValueError("Lean handoff request changed during verification; rerun from a stable request")
+    current_state = ensure_runtime(project)
+    if (current_state["claim_sha256"], current_state.get("claim_revision", 0)) != (
+        state["claim_sha256"], state.get("claim_revision", 0)
+    ):
+        raise ValueError("project claim revision changed during Lean verification")
+    validate_statement_source(project, node)
+    if sha256_file(lean_status) != checker_sha256_before:
+        raise ValueError("Lean checker script changed during verification")
     lean_sha256_after = sha256_file(lean_path)
-    lean_file_stable = lean_sha256_before == lean_sha256_after
-    scan = first_result(status_payload)
+    binding_after = target_binding(project, packet)
+    lean_file_stable = lean_sha256_before == lean_sha256_after and binding_before == binding_after
+    scan = validate_checker_result(status_payload, lean_path, target_name, target_kind)
     check = scan.get("check") if isinstance(scan.get("check"), dict) else {}
     blockers = scan.get("blockers") if isinstance(scan.get("blockers"), dict) else {}
     target_missing = bool(scan.get("missing_required_declaration_kinds"))
@@ -525,6 +755,7 @@ def verify(args: argparse.Namespace) -> int:
         and blocker_free
         and not target_missing
         and not scan.get("error")
+        and not check.get("timed_out", False)
         and lean_file_stable
     )
 
@@ -602,7 +833,7 @@ def verify(args: argparse.Namespace) -> int:
         if eligible
         else "exact Lean obstruction recorded; target remains blocked"
     )
-    acceptance = read_acceptance(project, packet)
+    acceptance, acceptance_refreshed = refresh_acceptance_binding(project, packet, binding_after)
     acceptance_ok, acceptance_missing = acceptance_passes(acceptance)
     final_ready = eligible and node.get("role") == "full-theorem" and acceptance_ok
     promotion_error = ""
@@ -624,6 +855,7 @@ def verify(args: argparse.Namespace) -> int:
         "request_path": request_rel,
         "request_sha256": request_sha256_before,
         "claim_sha256": state["claim_sha256"],
+        "claim_revision": state.get("claim_revision", 0),
         "node_id": node.get("id"),
         "node_role": node.get("role"),
         "statement": node.get("statement"),
@@ -631,9 +863,11 @@ def verify(args: argparse.Namespace) -> int:
         "lean_file_sha256_before": lean_sha256_before,
         "lean_file_sha256": lean_sha256_after,
         "lean_file_stable_during_check": lean_file_stable,
+        "target_binding": binding_after,
         "target_name": target_name,
         "target_kind": target_kind,
         "checker_command": command,
+        "checker_script_sha256": checker_sha256_before,
         "checker_exit_code": status_exit_code,
         "checker_process_exit_code": proc_returncode,
         "exact_target_gate": "pass" if eligible else "fail",
@@ -650,6 +884,7 @@ def verify(args: argparse.Namespace) -> int:
         "recommended_owner": owner,
         "formal_failure_surgery": surgery_contract,
         "acceptance_report": acceptance,
+        "acceptance_binding_refreshed": acceptance_refreshed,
         "eligible_for_formalized_complete": final_ready,
         "promotion_requested": bool(args.promote_final),
         "promotion_error": promotion_error,
@@ -657,6 +892,11 @@ def verify(args: argparse.Namespace) -> int:
     }
     result["result_sha256"] = sha256_json(result)
     atomic_write_json(result_path, result)
+    if not final_ready:
+        invalidate_completed_request(
+            project, request_rel,
+            "the completed formal target failed rechecking or its final acceptance audit is stale",
+        )
 
     attempt = {
         "event_type": "lean_handoff_checked",
@@ -692,6 +932,7 @@ def verify(args: argparse.Namespace) -> int:
             "statement": str(node.get("statement", "")),
             "handoff_id": packet["handoff_id"],
             "result_path": result_rel,
+            "result_file_sha256": sha256_file(result_path),
             "recommended_owner": owner,
         },
     )
@@ -700,6 +941,17 @@ def verify(args: argparse.Namespace) -> int:
         proof_status="formalized-complete" if args.promote_final and final_ready else None,
         current_node=str(node.get("id", target_name)),
         last_decisive_artifact=result_rel,
+        evidence_summary={
+            "disposition": "proved",
+            "basis": "formal-proof",
+            "scope": "full-original-theorem",
+            "claim_sha256": state["claim_sha256"],
+            "claim_revision": state.get("claim_revision", 0),
+            "human_reviewed": False,
+            "formal_verification": True,
+            "formal_result_path": result_rel,
+            "formal_result_sha256": sha256_file(result_path),
+        } if args.promote_final and final_ready else None,
     )
 
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
@@ -766,6 +1018,13 @@ def main() -> int:
     try:
         return prepare(args) if args.command == "prepare" else verify(args)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
+        if args.command == "verify":
+            try:
+                project = project_path(args.project)
+                _, request_relative = inside_project(project, args.request)
+                invalidate_completed_request(project, request_relative, str(exc))
+            except (OSError, ValueError, TypeError, KeyError):
+                pass
         print(str(exc), file=sys.stderr)
         return 2
 

@@ -703,7 +703,7 @@ ok = "--require-decl-kind" in sys.argv and required in sys.argv
 print(json.dumps({
     "results": [{
         "path": sys.argv[1],
-        "blockers": {"sorry": 0, "axiom": 0, "unsafe": 0},
+        "blockers": {"sorry": 0, "admit": 0, "axiom": 0, "constant": 0, "unsafe": 0},
         "total_blockers": 0,
         "declarations": [{"name": "Smoke.bellman_local", "kind": "theorem"}],
         "missing_required_declaration_kinds": [] if ok else [required],
@@ -819,7 +819,8 @@ target.write_text(target.read_text(encoding="utf-8") + "\\n-- concurrent edit\\n
 print(json.dumps({
     "results": [{
         "path": str(target),
-        "blockers": {"sorry": 0, "axiom": 0, "unsafe": 0},
+        "declaration_list": [{"name": "Smoke.bellman_local", "kind": "theorem"}],
+        "blockers": {"sorry": 0, "admit": 0, "axiom": 0, "constant": 0, "unsafe": 0},
         "total_blockers": 0,
         "missing_required_declaration_kinds": [],
         "check": {"returncode": 0, "stdout": "", "stderr": ""},
@@ -917,7 +918,7 @@ import sys
 print(json.dumps({
     "results": [{
         "path": sys.argv[1],
-        "blockers": {"sorry": 0, "axiom": 0, "unsafe": 0},
+        "blockers": {"sorry": 0, "admit": 0, "axiom": 0, "constant": 0, "unsafe": 0},
         "total_blockers": 0,
         "declarations": [{"name": "Smoke.bellman_local", "kind": "theorem"}],
         "missing_required_declaration_kinds": [],
@@ -1405,15 +1406,19 @@ print("mock referee completed")
                 ),
             }
         )
+        # Restore the original recorded claim specification after testing corruption.
+        # Its replay remains unverified; a successor must establish this same scope.
+        orphaned_directory.rename(artifact_file.parent)
+        artifact_file.write_text(json.dumps(recorded, indent=2) + "\n", encoding="utf-8")
         replacement = json.loads(
             run(
                 str(SCRIPTS / "computation_artifact.py"),
                 "record",
                 str(project),
                 "--claim-id",
-                "L1-replacement",
+                "L1",
                 "--local-claim",
-                "The replacement exact test expression equals four.",
+                "The exact test expression equals four.",
                 "--backend",
                 "mock-wolfram",
                 "--backend-version",

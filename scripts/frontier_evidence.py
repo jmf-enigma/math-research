@@ -20,6 +20,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from proof_runtime import read_project_identity
+
 
 SCHEMA_VERSION = 1
 MANIFEST = Path("literature/frontier-evidence.json")
@@ -35,7 +37,7 @@ FULLTEXT_STATUSES = {
 FRONTIER_STATUSES = {"known", "likely-known", "apparently-open", "genuinely-new"}
 ACCESS_STATUSES = {"open-access", "user-provided", "institution-authorized"}
 MAX_BYTES = 200 * 1024 * 1024
-USER_AGENT = "TheoryProofWorkbench/1.0 (lawful academic full-text retrieval)"
+USER_AGENT = "MathResearch/1.0 (lawful academic full-text retrieval)"
 
 
 def today() -> str:
@@ -192,8 +194,16 @@ def validate_frontier_bundle(project: Path) -> dict[str, Any]:
 
     if bundle.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION}")
-    if not filled(bundle.get("claim")):
+    if not isinstance(bundle.get("claim"), str) or not bundle["claim"].strip():
         errors.append("claim is blank")
+    if (project / "routing.json").is_file() or (project / "claim.md").is_file():
+        try:
+            project_claim, _ = read_project_identity(project)
+        except (OSError, ValueError) as exc:
+            errors.append(f"project claim identity is invalid: {exc}")
+        else:
+            if not isinstance(bundle.get("claim"), str) or bundle["claim"].strip() != project_claim:
+                errors.append("frontier evidence claim does not match the project claim")
 
     discovery = bundle.get("discovery") if isinstance(bundle.get("discovery"), dict) else {}
     method = discovery.get("method")

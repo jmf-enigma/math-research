@@ -141,7 +141,7 @@ python3 scripts/frontier_evidence.py validate PROJECT
 python3 scripts/proof_doctor.py PROJECT
 ```
 
-Use `apparently-open` unless coverage is unusually strong. A valid bundle proves that the recorded searches and files exist unchanged and that one closest proof was read with exact anchors. It does not prove exhaustive literature coverage or the truth of the paper.
+Use `apparently-open` unless coverage is unusually strong. A valid bundle confirms that the recorded files match their hashes and required search/reading fields are present. The `proof-read` status, anchors, and solution card are declared reading evidence for inspection; the validator does not independently establish that a human or agent read the proof. It does not prove exhaustive literature coverage or the truth of the paper.
 
 ## Design Source
 

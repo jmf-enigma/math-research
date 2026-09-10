@@ -21,6 +21,7 @@ from proof_runtime import (
     atomic_write_json,
     ensure_runtime,
     init_runtime,
+    invalidate_acceptance,
     iter_channel,
     project_path,
     runtime_brief,
@@ -155,6 +156,8 @@ assumptions and target type match the exact theorem; otherwise ignore the packet
 `retired_routes` may contain only a recent detail window; `retired_route_count` is the total, and
 the controller screens exact route signatures against the complete local history. Use the recent
 details to reject semantic renamings rather than assuming the truncated window is the full record.
+`historical_route_hints` concern older or unknown acceptance obligations. Inspect their failure
+conditions for search guidance; they are not current exclusions.
 
 Return JSON matching `scout.schema.json` and nothing else.
 """
@@ -177,6 +180,8 @@ exact obstruction and one requested capability.
 
 `retired_routes` is a recent detail window. The controller has already removed exact-signature
 repeats against the full history; use the supplied details to reject semantic renamings as well.
+`historical_route_hints` concern older or unknown acceptance obligations. They are search hints,
+not grounds for exclusion unless their failure applies under the current contract.
 
 Return JSON matching `selection.schema.json` and nothing else.
 """
@@ -214,6 +219,8 @@ an exact assumption match. Ignore it when classification is ambiguous or it does
 `retired_routes` may contain only recent details. The controller, not this packet, enforces the
 complete exact-signature check reported by `retired_route_count`. Use the recent details to avoid
 reconstructing the same mechanism under cosmetic wording changes.
+`historical_route_hints` concern older or unknown acceptance obligations. Use them as search
+guidance and recheck their failure conditions under the current contract; they are not exclusions.
 
 Every auxiliary object or lemma must have a mathematical motivation, be consumed by the route,
 and make the parent target strictly simpler. Do not hide the theorem in a placeholder lemma or
@@ -699,9 +706,11 @@ def bookkeeping_retirement(record: dict[str, Any]) -> bool:
 
 def prior_retired_routes(project: Path) -> dict[str, dict[str, str]]:
     retired: dict[str, dict[str, str]] = {}
+    contract_hash = sha256_text(read_acceptance_contract(project))
     for envelope in iter_channel(project, "attempts", current_claim_only=True):
         record = envelope.get("record", {})
-        if bookkeeping_retirement(record):
+        if (bookkeeping_retirement(record)
+            or record.get("acceptance_contract_sha256") != contract_hash):
             continue
         if record.get("outcome") == "retired" and record.get("signature_version") == 2:
             value = record.get("route_signature")
@@ -723,8 +732,30 @@ def prior_retired_routes(project: Path) -> dict[str, dict[str, str]]:
     return retired
 
 
+def historical_route_hints(project: Path) -> list[dict[str, str]]:
+    """Retain prior/unknown-contract failures as hints, never hard exclusions."""
+    contract_hash = sha256_text(read_acceptance_contract(project))
+    hints: dict[str, dict[str, str]] = {}
+    for envelope in iter_channel(project, "attempts", current_claim_only=True):
+        record = envelope["record"]
+        if (bookkeeping_retirement(record) or record.get("outcome") != "retired"
+            or record.get("signature_version") != 2
+            or record.get("acceptance_contract_sha256") == contract_hash):
+            continue
+        signature = record.get("route_signature")
+        if isinstance(signature, str) and signature:
+            hints.pop(signature, None)
+            hints[signature] = {
+                **route_record({**record, "proof_kernel": record.get("target_lemma", "")},
+                               signature, str(record.get("failure_witness", ""))),
+                "scope": "prior-or-unknown-acceptance-contract",
+            }
+    return list(hints.values())[-MAX_HISTORICAL_ROUTES:]
+
+
 def prior_untried_routes(project: Path) -> list[dict[str, Any]]:
     pool: dict[str, dict[str, Any]] = {}
+    contract_hash = sha256_text(read_acceptance_contract(project))
     for envelope in iter_channel(project, "attempts", current_claim_only=True):
         record = envelope.get("record", {})
         if bookkeeping_retirement(record):
@@ -752,7 +783,9 @@ def prior_untried_routes(project: Path) -> list[dict[str, Any]]:
                 "requested_capability": "none",
                 "route_signature": signature,
             }
-        elif event_type == "hard_exploration_selected" or outcome == "retired":
+        elif event_type == "hard_exploration_selected" or (
+            outcome == "retired" and record.get("acceptance_contract_sha256") == contract_hash
+        ):
             pool.pop(signature, None)
     return list(pool.values())[-MAX_HISTORICAL_ROUTES:]
 
@@ -796,6 +829,8 @@ def record_plan_disposition(
     candidate: dict[str, Any],
     disposition: str,
     reason: str,
+    *, acceptance_contract_sha256: str | None = None,
+    expected_claim: tuple[str, int] | None = None,
 ) -> None:
     outcome = "retired" if disposition == "retire" else disposition
     append_record(
@@ -817,7 +852,11 @@ def record_plan_disposition(
             "route_signature": candidate["route_signature"],
             "signature_version": 2,
             "assumptions_used": candidate["assumptions_used"],
+            "acceptance_contract_sha256": (
+                acceptance_contract_sha256 or sha256_text(read_acceptance_contract(project))
+            ),
         },
+        expected_claim=expected_claim,
     )
 
 
@@ -844,6 +883,7 @@ def prepare_scout(
         "domain_seed": scout_domain_seed_packet(state["claim"], role),
         "retired_routes": packet_retired_routes(retired_routes),
         "retired_route_count": len(retired_routes),
+        "historical_route_hints": historical_route_hints(project),
         "references": references,
         "budget": {"one_route_only": True, "search_enabled": False},
     }
@@ -892,11 +932,14 @@ def prepare_selector(
         "schema_version": 1,
         "phase": "hard-plan-selection",
         "claim": state["claim"],
+        "claim_sha256": state["claim_sha256"],
+        "claim_revision": state.get("claim_revision", 0),
         "acceptance_contract": read_acceptance_contract(project),
         "candidates": candidates,
         "blocked_scouts": blocked_scouts,
         "retired_routes": packet_retired_routes(retired_routes),
         "retired_route_count": len(retired_routes),
+        "historical_route_hints": historical_route_hints(project),
         "trust_note": "Route proposals are unverified mathematical hypotheses.",
     }
     atomic_write_json(run_dir / "packet.json", packet)
@@ -1047,7 +1090,7 @@ def run_hard_exploration(
             "scouts_completed": len(roles),
         }
 
-    selector_dir, _, selector_command = prepare_selector(
+    selector_dir, selector_packet, selector_command = prepare_selector(
         args,
         project,
         exploration_dir,
@@ -1070,6 +1113,12 @@ def run_hard_exploration(
     )
     by_id = {candidate["candidate_id"]: candidate for candidate in candidates}
     selection = load_selection(selector_dir, set(by_id))
+    state = ensure_runtime(project)
+    selection_contract_hash = sha256_text(selector_packet["acceptance_contract"])
+    expected_claim = (selector_packet["claim_sha256"], selector_packet["claim_revision"])
+    if (expected_claim != (state["claim_sha256"], state.get("claim_revision", 0))
+        or selection_contract_hash != sha256_text(read_acceptance_contract(project))):
+        raise ValueError("the theorem or acceptance contract changed during plan selection")
     for rejected in selection["rejected_candidates"]:
         record_plan_disposition(
             project,
@@ -1077,6 +1126,8 @@ def run_hard_exploration(
             by_id[rejected["candidate_id"]],
             rejected["disposition"],
             rejected["reason"],
+            acceptance_contract_sha256=selection_contract_hash,
+            expected_claim=expected_claim,
         )
     if selection["decision"] == "no-progress":
         return {
@@ -1098,6 +1149,8 @@ def run_hard_exploration(
         selected,
         "selected",
         selection["selection_reason"],
+        acceptance_contract_sha256=selection_contract_hash,
+        expected_claim=expected_claim,
     )
     plan = {
         "candidate_id": selected["candidate_id"],
@@ -1166,6 +1219,7 @@ def prepare_generation(
         "domain_seed": generation_domain_seed_packet(state["claim"], mode, stable_plan),
         "retired_routes": packet_retired_routes(retired_routes),
         "retired_route_count": len(retired_routes),
+        "historical_route_hints": historical_route_hints(project),
         "referee_feedback": feedback,
         "previous_candidate": previous_candidate if mode == "repair" else None,
         "stable_plan": stable_plan if mode in {"solve", "repair"} else None,
@@ -1261,6 +1315,8 @@ def record_retirement(
     payload: dict[str, Any],
     signature: str,
     failure: str,
+    *, acceptance_contract_sha256: str | None = None,
+    expected_claim: tuple[str, int] | None = None,
 ) -> None:
     append_record(
         project,
@@ -1275,7 +1331,11 @@ def record_retirement(
             "route_signature": signature,
             "signature_version": 2,
             "assumptions_used": payload.get("assumptions_used", []),
+            "acceptance_contract_sha256": (
+                acceptance_contract_sha256 or sha256_text(read_acceptance_contract(project))
+            ),
         },
+        expected_claim=expected_claim,
     )
 
 
@@ -1318,11 +1378,24 @@ def check_review_inputs(
 def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
     if min(args.max_iterations, args.max_wall_seconds, args.generator_timeout, args.referee_timeout) < 1:
         raise ValueError("iteration and time budgets must be positive")
-    checkpoint = load_checkpoint(project)
+
+    def invalidate(reason: str, result: dict[str, Any] | None = None) -> None:
+        if not args.prepare_only:
+            invalidate_acceptance(project, reason, previous_result=result,
+                                  accepted_statuses={"referee-accepted"})
+
+    try:
+        checkpoint = load_checkpoint(project)
+    except (OSError, ValueError) as exc:
+        invalidate(f"checkpoint-integrity-failure: {exc}")
+        raise
     if getattr(args, "fresh_attempt", False):
+        invalidate("fresh-proof-attempt", checkpoint.get("result"))
         old_usage = checkpoint["usage"]
         checkpoint = empty_checkpoint(project)
         checkpoint["usage"] = old_usage
+    elif checkpoint["phase"] != "complete":
+        invalidate("pending-proof-attempt", checkpoint.get("result"))
     contract_hash = sha256_text(read_acceptance_contract(project))
     contract_changed = checkpoint["acceptance_contract_sha256"] != contract_hash
     checkpoint["acceptance_contract_sha256"] = contract_hash
@@ -1334,7 +1407,11 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
     args.model = args.model or checkpoint["model"]
     args.reasoning_effort = args.reasoning_effort or checkpoint["reasoning_effort"]
     checkpoint.update(model=args.model, reasoning_effort=args.reasoning_effort)
-    args.reference, new_evidence = merge_references(project, checkpoint, args.reference)
+    try:
+        args.reference, new_evidence = merge_references(project, checkpoint, args.reference)
+    except (OSError, ValueError) as exc:
+        invalidate(f"reference-integrity-failure: {exc}", checkpoint.get("result"))
+        raise
     if len(args.reference) > MAX_REFERENCES:
         raise ValueError(f"at most {MAX_REFERENCES} references may be supplied")
 
@@ -1368,7 +1445,9 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
         persist()
 
     def retire(payload: dict[str, Any], signature: str, issue: str) -> None:
-        record_retirement(project, payload, signature, issue)
+        record_retirement(project, payload, signature, issue,
+                          acceptance_contract_sha256=checkpoint["acceptance_contract_sha256"],
+                          expected_claim=(checkpoint["claim_sha256"], checkpoint["claim_revision"]))
         remember_retired_route(retired_routes, signature, route_record(payload, signature, issue))
 
     def await_evidence(capability: str, generation: dict[str, Any], issue: Any, resume: str) -> dict[str, Any]:
@@ -1391,27 +1470,25 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
                      and not (checkpoint["result"] or {}).get("referee_packet_descriptor"))
     if checkpoint["phase"] == "complete" and (new_evidence or contract_changed or legacy_result):
         checkpoint["phase"] = "verify"
-        if not args.prepare_only:
-            update_state(project, proof_status="unresolved", current_node="pending evidence recheck",
-                         last_decisive_artifact="", evidence_summary={
-                             "disposition": "pending", "basis": "updated-acceptance-inputs",
-                             "previous_result": checkpoint["result"]["artifact_descriptor"],
-                             "human_reviewed": False, "formal_verification": False,
-                         })
+        invalidate("updated-acceptance-inputs", checkpoint.get("result"))
         checkpoint["result"] = None
     if checkpoint["phase"] == "complete":
-        pending = checkpoint["pending_candidate"]
-        if pending:
-            checked_path(project, pending["artifact"])
-        result = checkpoint["result"]
-        if result:
-            checked_path(project, result["artifact_descriptor"])
-            if result.get("referee_report_descriptor"):
-                checked_path(project, result["referee_report_descriptor"])
-            descriptor = result["referee_packet_descriptor"]
-            packet = json.loads(checked_path(project, descriptor).read_text(encoding="utf-8"))
-            check_review_inputs(project, checkpoint, packet, descriptor)
-            return finish({**result, "reused_completed_result": True, "prepare_only": args.prepare_only})
+        try:
+            pending = checkpoint["pending_candidate"]
+            if pending:
+                checked_path(project, pending["artifact"])
+            result = checkpoint["result"]
+            if result:
+                checked_path(project, result["artifact_descriptor"])
+                if result.get("referee_report_descriptor"):
+                    checked_path(project, result["referee_report_descriptor"])
+                descriptor = result["referee_packet_descriptor"]
+                packet = json.loads(checked_path(project, descriptor).read_text(encoding="utf-8"))
+                check_review_inputs(project, checkpoint, packet, descriptor)
+                return finish({**result, "reused_completed_result": True, "prepare_only": args.prepare_only})
+        except (OSError, ValueError) as exc:
+            invalidate(f"accepted-result-integrity-failure: {exc}", checkpoint.get("result"))
+            raise
     if checkpoint["phase"] == "awaiting-evidence":
         if not new_evidence and not args.prepare_only:
             request = checkpoint["evidence_request"]

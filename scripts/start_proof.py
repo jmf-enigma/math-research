@@ -152,8 +152,10 @@ Treat attempts with the same goal, assumptions, central object, and failure witn
 If there are several fingerprints or the match is ambiguous, run:
 
 ```bash
-codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/check_attempt.py" . --route-family "ROUTE" --central-object "OBJECT" --target-lemma "LEMMA" --failure-witness "WITNESS"
+python3 "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/check_attempt.py" . --route-family "ROUTE" --central-object "OBJECT" --target-lemma "LEMMA" --failure-witness "WITNESS"
 ```
+
+The helper preserves mathematical symbols and compares textual fields. It blocks only an exact, sufficiently specified fingerprint recorded as failed, retired, or refuted. `review-similar` calls for inspecting the difference; a shared route name, a missing field, or an untried record is not failure evidence. Supply all recorded assumptions and construction fields before treating a match as exact.
 
 ## Route Candidate Board
 
@@ -1120,7 +1122,7 @@ Do not admit the split when the parent assembly or a required child's exact use 
 When a lemma becomes reusable, create a lemma card:
 
 ```bash
-codex-math-python "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/new_lemma_card.py" "LEMMA NAME" --statement "STATEMENT"
+python3 "${{CODEX_HOME:-$HOME/.codex}}/skills/math-research/scripts/new_lemma_card.py" "LEMMA NAME" --statement "STATEMENT"
 ```
 """
 
@@ -1150,7 +1152,7 @@ Use this directory for reusable local proof moves extracted from papers, appendi
 Create a card only when the trick changes the next proof move:
 
 ```bash
-codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/new_trick_card.py" "TRICK NAME" --project . --source "SOURCE" --shape "PROBLEM SHAPE" --obstruction "OBSTRUCTION"
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/new_trick_card.py" "TRICK NAME" --project . --source "SOURCE" --shape "PROBLEM SHAPE" --obstruction "OBSTRUCTION"
 ```
 
 Status values:
