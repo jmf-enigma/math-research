@@ -417,6 +417,14 @@ def append_record(
 ) -> dict[str, Any]:
     root = project_path(project)
     ensure_runtime(root)
+    if channel == "counterexamples" and isinstance(record, dict) and isinstance(record.get("witness"), str):
+        witness = Path(record["witness"]).expanduser()
+        witness = (witness if witness.is_absolute() else root / witness).resolve()
+        if witness.is_relative_to(root) and witness.is_file():
+            digest = sha256_file(witness)
+            if record.get("artifact_sha256") not in (None, digest):
+                raise ValueError("counterexample witness differs from its supplied file hash")
+            record = {**record, "artifact_sha256": digest}
     return _append_record(root, channel, record, expected_claim=expected_claim)
 
 
@@ -601,11 +609,14 @@ def runtime_brief(project: str | Path, limit: int = 2) -> dict[str, Any]:
         raise ValueError("limit must be nonnegative")
     recent: dict[str, list[dict[str, Any]]] = {}
     counts: dict[str, int] = {}
+    latest_claim_revision = None
     for channel in CHANNELS:
         tail: deque[dict[str, Any]] = deque(maxlen=limit or 1)
         count = 0
         for entry in iter_channel(root, channel, current_claim_only=True):
             count += 1
+            if channel == "events" and entry["record"].get("event_type") == "claim_revised":
+                latest_claim_revision = compact_envelope(channel, entry)
             if limit:
                 tail.append(compact_envelope(channel, entry))
         counts[channel] = count
@@ -616,6 +627,7 @@ def runtime_brief(project: str | Path, limit: int = 2) -> dict[str, Any]:
         "state": read_state(root),
         "counts": counts,
         "recent": recent,
+        "latest_claim_revision": latest_claim_revision,
     }
 
 
@@ -624,6 +636,11 @@ def brief_markdown(brief: dict[str, Any]) -> str:
     lines = [
         "# Proof Runtime Brief",
         "",
+        "## Current Claim",
+        "",
+        state["claim"],
+        "",
+        f"- claim revision: {state.get('claim_revision', 0)}",
         f"- proof status: {state.get('proof_status')}",
         f"- current node: {state.get('current_node') or 'not set'}",
         f"- last decisive artifact: {state.get('last_decisive_artifact') or 'none'}",
@@ -631,7 +648,13 @@ def brief_markdown(brief: dict[str, Any]) -> str:
     ]
     if state.get("project_status_hint"):
         lines.append(f"- project status hint (unverified): {state['project_status_hint']}")
-    lines.extend(["", "## Channel Counts", ""])
+    revision = brief.get("latest_claim_revision")
+    if revision:
+        reason = revision["record"].get("reason") or "reason not recorded"
+        lines.append(f"- latest theorem repair: {reason} (record: {revision['record_id']})")
+    lines.extend(["", "## Current-Claim Channel Counts", ""])
+    if state.get("claim_revision", 0):
+        lines.extend(["Prior revisions remain in the append-only history and are excluded from these counts.", ""])
     for channel, count in brief["counts"].items():
         lines.append(f"- {channel}: {count}")
     lines.extend(["", "## Recent Decision-Relevant Records", ""])

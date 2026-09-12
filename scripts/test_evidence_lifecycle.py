@@ -117,6 +117,96 @@ class EvidenceLifecycleTests(unittest.TestCase):
         diagnosis = proof_doctor.diagnose(self.root)
         self.assertTrue(diagnosis["audit"]["ready_for_final_proof"], diagnosis["latest_referee"])
 
+    def test_theorem_revision_cannot_reuse_the_old_completed_ledger(self):
+        runtime_state = proof_runtime.ensure_runtime(self.root)
+        self.assertTrue(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_proof"])
+        revised = "For every natural number n, n + 1 = n."
+        self.write_json(self.root / "routing.json", {"claim": revised, "mode": "project"})
+        (self.root / "claim.md").write_text(f"# Claim\n\n{revised}\n")
+        proof_runtime.revise_claim(self.root, "This changed assertion requires fresh evaluation at zero.")
+        ledger_before = (self.root / "LEDGER.md").read_bytes()
+        diagnosis = proof_doctor.diagnose(self.root)
+        self.assertFalse(diagnosis["audit"]["ready_for_final_proof"])
+        self.assertFalse(diagnosis["audit"]["claim_identity_ready"])
+        self.assertEqual(diagnosis["claim"], revised)
+        self.assertIn("Reconcile LEDGER.md", diagnosis["primary_action"])
+        self.assertEqual((self.root / "LEDGER.md").read_bytes(), ledger_before)
+        self.assertEqual(proof_runtime.read_state(self.root)["claim_revision"], runtime_state["claim_revision"] + 1)
+
+    def test_ledger_only_statement_change_does_not_replace_the_project_claim(self):
+        proof_runtime.ensure_runtime(self.root)
+        path = self.root / "LEDGER.md"
+        path.write_text(path.read_text().replace(self.claim, "For every natural number n, n + 1 = n."))
+        diagnosis = proof_doctor.diagnose(self.root)
+        self.assertFalse(diagnosis["audit"]["ready_for_final_proof"])
+        self.assertEqual(diagnosis["claim"], self.claim)
+        self.assertEqual(proof_runtime.read_state(self.root)["claim_revision"], 0)
+
+    def test_resume_brief_keeps_theorem_repair_outside_the_recent_event_window(self):
+        proof_runtime.ensure_runtime(self.root)
+        revised = "For every natural number n, n + 1 > n."
+        reason = "Replace equality by strict order; the old equality proof does not transfer."
+        self.write_json(self.root / "routing.json", {"claim": revised, "mode": "project"})
+        (self.root / "claim.md").write_text(f"# Claim\n\n{revised}\n")
+        proof_runtime.revise_claim(self.root, reason)
+        for number in range(4):
+            proof_runtime.append_record(self.root, "events", {"event_type": "inspection", "reason": str(number)})
+        for limit in (0, 2):
+            with self.subTest(limit=limit):
+                brief = proof_runtime.runtime_brief(self.root, limit=limit)
+                self.assertEqual(brief["state"]["claim"], revised)
+                self.assertEqual(brief["state"]["claim_revision"], 1)
+                self.assertEqual(brief["latest_claim_revision"]["record"]["reason"], reason)
+                self.assertEqual(brief["counts"]["events"], 5)
+                self.assertTrue(all(entry["record"]["event_type"] != "claim_revised"
+                                    for entry in brief["recent"].get("events", [])))
+
+    def refutation_fixture(self):
+        false_claim = "For every natural number n, n + 1 = n."
+        self.write_json(self.root / "routing.json", {"claim": false_claim, "mode": "project"})
+        (self.root / "claim.md").write_text(f"# Claim\n\n{false_claim}\n")
+        original = (self.root / "LEDGER.md").read_text().replace(self.claim, false_claim).replace(
+            "## Status\n\ncomplete", "## Status\n\nrefuted")
+        (self.root / "LEDGER.md").write_text(original)
+        (self.root / "counterexample.md").write_text(
+            "Take n=0, a natural number. Then n+1=1 while n=0, so equality fails. "
+            "Self-review: the witness satisfies the stated domain and negates the original equality.\n")
+        return {"event_type": "exact_counterexample", "claim_id": "main theorem", "status": "refuted",
+                "witness": "counterexample.md", "evidence_basis": "exact arithmetic and distinct self-review"}
+
+    def test_completed_refutation_finishes_without_searching_for_a_proof(self):
+        record = self.refutation_fixture()
+        without_evidence = proof_doctor.diagnose(self.root)
+        self.assertFalse(without_evidence["audit"]["ready_for_final_refutation"])
+        proof_runtime.append_record(self.root, "counterexamples", record)
+        original = (self.root / "LEDGER.md").read_text()
+        for state in ("S2-stress-test", "S8-finalize"):
+            with self.subTest(state=state):
+                (self.root / "LEDGER.md").write_text(original.replace("S8-finalize", state))
+                diagnosis = proof_doctor.diagnose(self.root)
+                self.assertTrue(diagnosis["audit"]["ready_for_final_refutation"])
+                self.assertFalse(diagnosis["audit"]["ready_for_final_proof"])
+                self.assertIn("Present the counterexample", diagnosis["primary_action"])
+        channel = proof_runtime.channel_path(self.root, "counterexamples")
+        channel.write_text('{"broken":\n')
+        diagnosis = proof_doctor.diagnose(self.root)
+        self.assertFalse(diagnosis["audit"]["ready_for_final_refutation"])
+        self.assertIn("Repair the invalid runtime record", diagnosis["primary_action"])
+
+    def test_refutation_requires_original_scope_review_basis_and_current_witness(self):
+        record = self.refutation_fixture()
+        proof_runtime.append_record(self.root, "counterexamples", {**record, "claim_id": "L1"})
+        self.assertFalse(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_refutation"])
+        proof_runtime.append_record(self.root, "counterexamples", {**record, "evidence_basis": ""})
+        self.assertFalse(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_refutation"])
+        proof_runtime.append_record(self.root, "counterexamples", record)
+        self.assertTrue(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_refutation"])
+        witness = self.root / "counterexample.md"
+        witness.write_text("A different, unchecked proposed witness.\n")
+        self.assertFalse(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_refutation"])
+        witness.unlink()
+        self.assertFalse(proof_doctor.diagnose(self.root)["audit"]["ready_for_final_refutation"])
+
     def test_changed_target_resets_audit_and_revokes_completion(self):
         self.promote()
         self.target.write_text("theorem audit_target : True := by trivial\n")

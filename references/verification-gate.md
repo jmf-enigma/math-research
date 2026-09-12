@@ -44,3 +44,19 @@ Examples of targeted attacks include necessary versus sufficient KKT conditions,
 ## Final report
 
 Give the exact result or obstruction, the decisive mechanism, essential assumptions, and the scope of any external check. Name unresolved dependencies and explicit theorem repairs. Show a lemma graph or audit details only when they help the reader assess the result. Do not replace a mathematical proof with workflow records.
+
+## Recording a refutation
+
+For a durable project marked `refuted`, save the counterexample and its assumption/conclusion checks in a project-local file. Record its actual checking or review basis in the current theorem revision, for example:
+
+```json
+{
+  "event_type": "exact_counterexample",
+  "claim_id": "main theorem",
+  "status": "refuted",
+  "witness": "writeup/counterexample.md",
+  "evidence_basis": "Exact analytic derivation and a distinct adversarial self-review."
+}
+```
+
+Append the saved JSON with `proof_runtime.py append PROJECT counterexamples --record-file RECORD.json`. The runtime records the current witness file hash automatically. The doctor requires an original-theorem record, its checking basis, and an unchanged nonempty witness file before recommending delivery of a refutation. A local-lemma counterexample does not close the original theorem; a `refuted` ledger label alone is insufficient. An older record without a file hash needs checking and recording again. The hash preserves the inspected text; it does not verify the mathematics or create an independent review.

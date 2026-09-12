@@ -9,7 +9,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import uuid
 from pathlib import Path
@@ -28,6 +27,7 @@ from proof_runtime import (
     sha256_text,
     utc_now,
 )
+from run_referee import terminate_process_group
 
 
 RESULT_KINDS = {
@@ -360,26 +360,6 @@ def record_artifact(args: argparse.Namespace) -> dict[str, Any]:
         },
     )
     return payload
-
-
-def terminate_process_group(process: subprocess.Popen[str]) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, AttributeError):
-        process.terminate()
-    try:
-        process.wait(timeout=2)
-        return
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, AttributeError):
-        process.kill()
-    try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        pass
 
 
 def verify_inputs(project: Path, artifact: dict[str, Any]) -> list[str]:
@@ -718,6 +698,9 @@ def replay_artifact(args: argparse.Namespace) -> dict[str, Any]:
             except subprocess.TimeoutExpired:
                 timed_out = True
                 terminate_process_group(process)
+            except BaseException:
+                terminate_process_group(process)
+                raise
         return_code = process.returncode
         if stdout_path.stat().st_size > MAX_CAPTURE_BYTES:
             output_errors.append("stdout exceeds the 4 MiB capture limit")

@@ -386,9 +386,9 @@ def terminate_process_group(process: subprocess.Popen[str]) -> None:
         process.terminate()
     try:
         process.wait(timeout=2)
-        return
     except subprocess.TimeoutExpired:
         pass
+    # The leader may exit while a descendant ignores SIGTERM; clear the whole group.
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, AttributeError):
@@ -576,6 +576,10 @@ def run_referee(args: argparse.Namespace, run_dir: Path, command: list[str]) -> 
         except subprocess.TimeoutExpired:
             timed_out = True
             terminate_process_group(process)
+        except BaseException:
+            # Preserve interruption semantics after stopping the separate child session.
+            terminate_process_group(process)
+            raise
     if sha256_text(packet_path.read_text(encoding="utf-8")) != packet_hash:
         raise ValueError("referee packet changed during review; pending verification must be repeated")
     check_prepared_inputs(project, run_dir, packet)

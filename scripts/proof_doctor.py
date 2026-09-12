@@ -13,7 +13,7 @@ from audit_ledger import audit_ledger_text, section_body
 from computation_artifact import ComputationHistory, audit_artifact
 from frontier_evidence import FRONTIER_STATUSES, validate_frontier_bundle
 from lean_bridge import audit_formal_result
-from proof_runtime import CHANNELS, ensure_runtime, iter_channel
+from proof_runtime import CHANNELS, ensure_runtime, iter_channel, read_project_identity, sha256_file
 from select_playbook import PLAYBOOKS, score
 
 
@@ -174,6 +174,42 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def refutation_evidence_summary(project: Path, entries: list[dict]) -> dict:
+    """Require a current original-claim witness and an explicit evidence basis, not just a status label."""
+    result = {"ready": False, "witness": None, "evidence_basis": None, "errors": []}
+    record = next((entry["record"] for entry in reversed(entries) if (
+        entry["record"].get("claim_id") in {"main theorem", "original-claim", "original claim"}
+        or entry["record"].get("scope") == "full-original-theorem"
+    )), None)
+    if record is None:
+        result["errors"].append("No counterexample is recorded for the current original theorem.")
+        return result
+    if record.get("status") not in {"refuted", "referee-accepted"}:
+        result["errors"].append("The latest original-theorem counterexample has not been checked as a refutation.")
+    basis = record.get("evidence_basis")
+    if not isinstance(basis, str) or not basis.strip():
+        basis = "model-referee" if record.get("event_type") == "proof_loop_refutation" else None
+    if not basis:
+        result["errors"].append("Record the counterexample's checking or review basis.")
+    result["evidence_basis"] = basis
+    witness = record.get("witness")
+    try:
+        if not isinstance(witness, str) or not witness.strip():
+            raise ValueError("Record a project-local file containing the counterexample and its assumption/conclusion checks.")
+        root = project.resolve()
+        path = Path(witness).expanduser()
+        path = (path if path.is_absolute() else root / path).resolve()
+        if not path.is_relative_to(root) or not path.is_file() or not path.stat().st_size:
+            raise ValueError("The counterexample witness is missing, empty, or outside the project.")
+        if record.get("artifact_sha256") != sha256_file(path):
+            raise ValueError("The counterexample witness changed or lacks a recorded hash; check it and record it again.")
+        result["witness"] = str(path.relative_to(root))
+    except (OSError, ValueError) as exc:
+        result["errors"].append(str(exc))
+    result["ready"] = not result["errors"]
+    return result
+
+
 def runtime_referee_feedback(project: Path) -> dict:
     try:
         runtime_state = ensure_runtime(project)
@@ -205,9 +241,11 @@ def runtime_referee_feedback(project: Path) -> dict:
             "invalid_formal_artifacts": [],
             "passed_formal_node_ids": [],
             "needs_packet_repair": False,
+            "refutation_evidence": {"ready": False, "errors": [str(exc)]},
         }
 
     runtime_errors: list[str] = []
+    refutation_evidence = refutation_evidence_summary(project, channels["counterexamples"])
     evidence_summary = runtime_state.get("evidence_summary")
     if isinstance(evidence_summary, dict) and evidence_summary.get("disposition") == "pending":
         runtime_errors.append(
@@ -378,6 +416,7 @@ def runtime_referee_feedback(project: Path) -> dict:
             "invalid_formal_artifacts": invalid_formal,
             "passed_formal_node_ids": passed_formal,
             "needs_packet_repair": False,
+            "refutation_evidence": refutation_evidence,
         }
     record = verification_entries[-1].get("record", {})
     first_error = record.get("first_error") if isinstance(record.get("first_error"), dict) else {}
@@ -424,6 +463,7 @@ def runtime_referee_feedback(project: Path) -> dict:
         "invalid_formal_artifacts": invalid_formal,
         "passed_formal_node_ids": passed_formal,
         "needs_packet_repair": failure_kind in {"missing-packet-evidence", "tool-evidence-gap"},
+        "refutation_evidence": refutation_evidence,
         "verification_path": record.get("verification_path"),
     }
 
@@ -1303,9 +1343,14 @@ def primary_action_for(
     audit: dict,
     runtime_feedback: dict,
 ) -> str:
-    finalizing = state in {"S7-adversarial-review", "S8-finalize"}
+    finalizing = state in {"S7-adversarial-review", "S8-finalize"} or audit["refutation_recorded"]
     if not runtime_feedback["runtime_integrity_ok"]:
         return "Repair the invalid runtime record before continuing: " + runtime_feedback["runtime_errors"][0]
+    if not audit["claim_identity_ready"]:
+        return (
+            "Reconcile LEDGER.md with the current theorem: update its Claim and re-evaluate its proof "
+            "and verification statuses; preserve the previous proof as history. " + audit["claim_identity_error"]
+        )
     if finalizing and runtime_feedback["runtime_errors"]:
         return "Repair the invalid or stale runtime evidence before finalizing: " + runtime_feedback["runtime_errors"][0]
     if finalizing and runtime_feedback["invalid_formal_artifacts"]:
@@ -1326,6 +1371,12 @@ def primary_action_for(
             f"Repair the referee packet at {location}: supply the exact missing premise, proof, or "
             f"replayable certificate before resubmitting; do not restart proof search.{suffix}"
         )
+    if audit["ready_for_final_refutation"]:
+        return "Present the counterexample, its checked scope, and the original claim it refutes."
+    if audit["refutation_recorded"] and not runtime_feedback["refutation_evidence"]["ready"]:
+        return "Check and record the counterexample to the current original theorem: " + "; ".join(
+            runtime_feedback["refutation_evidence"]["errors"]
+        )
     if (
         mode == "recovery"
         and not fingerprints["has_real_entries"]
@@ -1337,6 +1388,8 @@ def primary_action_for(
         return decomposition["recommended_action"]
     if novel_problem["frontier_scan_needed"]:
         return novel_problem["recommended_action"]
+    if audit["refutation_recorded"]:
+        return "Complete the counterexample's assumption, scope, and review checks before reporting the original claim as refuted."
     if state == "S8-finalize" and audit["ready_for_final_proof"]:
         return "Present the proof with its verified status and essential assumptions."
     if state in {"S7-adversarial-review", "S8-finalize"} and not audit["ready_for_final_proof"]:
@@ -1380,7 +1433,16 @@ def diagnose(project: Path) -> dict:
         raise SystemExit(f"LEDGER.md not found in {project}")
     text = ledger.read_text(encoding="utf-8")
     routing = read_json(project / "routing.json")
-    claim = section_body(text, "Claim") or routing.get("claim", "")
+    ledger_claim = section_body(text, "Claim") or ""
+    claim = ledger_claim or routing.get("claim", "")
+    claim_identity_error = None
+    try:
+        claim, _ = read_project_identity(project)
+    except (OSError, ValueError) as exc:
+        claim_identity_error = str(exc)
+    else:
+        if ledger_claim != claim:
+            claim_identity_error = "The ledger Claim differs from claim.md/routing.json."
     state = (section_body(text, "Proof State") or "S0-parse").splitlines()[0].strip()
     verification = (section_body(text, "Verification Status") or "conjecture").splitlines()[0].strip()
     status = (section_body(text, "Status") or "open").splitlines()[0].strip()
@@ -1396,6 +1458,9 @@ def diagnose(project: Path) -> dict:
     else:
         selected = rerouted
     audit = audit_text(text, ledger)
+    audit["claim_identity_ready"] = claim_identity_error is None
+    audit["claim_identity_error"] = claim_identity_error
+    audit["refutation_recorded"] = status.casefold() == "refuted"
     novel_problem = novel_problem_summary(project, mode)
     idea_map = idea_map_need(project, state, selected, text)
     pattern_scan = pattern_scan_need(project, state, selected, text)
@@ -1420,6 +1485,14 @@ def diagnose(project: Path) -> dict:
     if not audit["decomposition_ready"]:
         audit["ready_for_final_proof"] = False
     if not audit["frontier_evidence_ready"]:
+        audit["ready_for_final_proof"] = False
+    if not audit["claim_identity_ready"]:
+        audit["ready_for_final_proof"] = False
+    audit["ready_for_final_refutation"] = (
+        audit["ready_for_final_proof"] and audit["refutation_recorded"]
+        and runtime_feedback["refutation_evidence"]["ready"]
+    )
+    if audit["refutation_recorded"]:
         audit["ready_for_final_proof"] = False
 
     actions = []
@@ -1607,10 +1680,15 @@ def print_human(result: dict) -> None:
     """Show the current decision and material evidence, keeping inactive controls out of the way."""
     print(f"project: {result['project']}")
     print(f"state: {result['proof_state']}")
-    print(f"status: {result['status']} / {result['verification_status']}")
+    label = "status" if result["audit"]["claim_identity_ready"] else "previous ledger status"
+    print(f"{label}: {result['status']} / {result['verification_status']}")
+    if not result["audit"]["claim_identity_ready"]:
+        print(f"current claim: {result['claim']}")
     print(f"primary action: {result['primary_action']}")
     audit = result["audit"]
     print(f"ready_for_final_proof: {audit['ready_for_final_proof']}")
+    if audit["refutation_recorded"]:
+        print(f"ready_for_final_refutation: {audit['ready_for_final_refutation']}")
     referee = result["latest_referee"]
     if referee["available"]:
         print(f"latest referee: {referee['verdict']} (scope: {referee['review_scope']})")
@@ -1631,7 +1709,7 @@ def print_human(result: dict) -> None:
             print(f"{field}: " + ", ".join(audit[field]))
     if audit["placeholder_count"]:
         print(f"unfilled ledger items: {audit['placeholder_count']}")
-    if not audit["ready_for_final_proof"] and result["recommended_files"]:
+    if not (audit["ready_for_final_proof"] or audit["ready_for_final_refutation"]) and result["recommended_files"]:
         print("next files: " + ", ".join(result["recommended_files"]))
     print("Use --details for the full diagnosis, or --json for structured output.")
 
@@ -1744,6 +1822,8 @@ def print_detailed(result: dict) -> None:
     for reason in route["reasons"]:
         print(f"- reason: {reason}")
     print(f"ready_for_final_proof: {result['audit']['ready_for_final_proof']}")
+    if result["audit"]["refutation_recorded"]:
+        print(f"ready_for_final_refutation: {result['audit']['ready_for_final_refutation']}")
 
 
 def main() -> None:

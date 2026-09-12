@@ -7,10 +7,13 @@ import copy
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 
 import proof_loop as loop
 import proof_runtime as runtime
@@ -22,6 +25,21 @@ CLAIM = "For every integer n, n(n+1) is even."
 ROOT = Path(__file__).resolve().parents[1]
 INJECTION = '''
 forced = os.environ.get("TEST_REFEREE_FAILURE", "")
+if (output.name, forced) in {("generation.json", "wait-generation"), ("verification.json", "wait-referee")}:
+    import subprocess
+    import time
+    child = subprocess.Popen([sys.executable, "-c",
+        "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)"],
+        stdout=subprocess.PIPE, text=True)
+    if child.stdout.readline().strip() != "ready":
+        child.kill()
+        child.wait()
+        raise RuntimeError("descendant did not install its SIGTERM handler")
+    pid_path = Path(os.environ["TEST_CHILD_PID"])
+    pending_path = pid_path.with_suffix(".tmp")
+    pending_path.write_text(json.dumps({"runner": os.getpid(), "descendant": child.pid}))
+    pending_path.replace(pid_path)
+    time.sleep(60)
 if output.name == "scout.json" and forced == "crash-second-scout" and packet["scout_role"]["name"] != "structural":
     sys.exit(23)
 if output.name == "generation.json" and forced == "follow-plan" and packet.get("stable_plan"):
@@ -174,6 +192,61 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(resumed["cumulative_usage"]["iterations"], 1)
         self.assertEqual(loop.prior_retired_routes(self.root / "crash"), {})
 
+    def test_ctrl_c_stops_child_process_groups_and_preserves_resumption(self):
+        def alive(pid):
+            try:
+                os.kill(pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+
+        for phase in ("generation", "referee"):
+            with self.subTest(phase=phase):
+                name = "interrupt-" + phase
+                project = self.root / name
+                pid_path = self.root / (name + ".json")
+                env = dict(os.environ, MOCK_PROOF_SCENARIO="accept",
+                           TEST_REFEREE_FAILURE="wait-" + phase, TEST_CHILD_PID=str(pid_path),
+                           PYTHONDONTWRITEBYTECODE="1", TEST_SKILL_SCRIPTS=str(ROOT / "scripts"))
+                command = [sys.executable, str(ROOT / "scripts" / "proof_loop.py"),
+                           str(project), "--claim", CLAIM, "--max-iterations", "1",
+                           "--codex-bin", str(self.codex)]
+                controller = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                              stderr=subprocess.PIPE, text=True, env=env,
+                                              start_new_session=True)
+                children = {}
+                try:
+                    deadline = time.monotonic() + 10
+                    while not pid_path.exists() and time.monotonic() < deadline and controller.poll() is None:
+                        time.sleep(0.02)
+                    self.assertTrue(pid_path.exists(), "mock model process did not start")
+                    children = json.loads(pid_path.read_text())
+                    os.killpg(controller.pid, signal.SIGINT)
+                    _, stderr = controller.communicate(timeout=10)
+                    self.assertNotEqual(controller.returncode, 0)
+                    self.assertIn("KeyboardInterrupt", stderr)
+                    deadline = time.monotonic() + 5
+                    while any(alive(pid) for pid in children.values()) and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertFalse(any(alive(pid) for pid in children.values()), "model subprocess survived Ctrl-C")
+                    saved = self.checkpoint(name)
+                    self.assertEqual(saved["phase"], "verify" if phase == "referee" else "solve")
+                    self.assertEqual(loop.prior_retired_routes(project), {})
+                    resumed = self.run_case(name)
+                    self.assertEqual(resumed["status"], "referee-accepted")
+                    self.assertEqual(resumed["cumulative_usage"]["iterations"], 1 if phase == "referee" else 2)
+                    if phase == "referee":
+                        self.assertEqual(self.checkpoint(name)["pending_candidate"], saved["pending_candidate"])
+                finally:
+                    if controller.poll() is None:
+                        os.killpg(controller.pid, signal.SIGKILL)
+                        controller.communicate(timeout=5)
+                    if children:
+                        try:
+                            os.killpg(children["runner"], signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
     def test_malformed_referee_resumes_verification_without_external_evidence(self):
         for failure in ("malformed", "malformed-enum"):
             with self.subTest(failure=failure):
@@ -273,6 +346,60 @@ class RecoveryTests(unittest.TestCase):
                 self.assertIsNone(state["last_decisive_artifact"])
                 self.assertEqual(pending_path.read_bytes(), original_candidate)
                 self.assertTrue((project / ".proof_runtime" / "proof_loop_checkpoint.json").exists())
+
+    def test_explicit_fresh_attempt_archives_damage_and_marks_unknown_prior_usage(self):
+        for corruption in ("hash-mismatch", "invalid-json"):
+            with self.subTest(corruption=corruption):
+                name = "fresh-damaged-" + corruption
+                accepted = self.run_case(name)
+                project = self.root / name
+                path = project / ".proof_runtime" / "proof_loop_checkpoint.json"
+                old_proof = Path(accepted["artifact"]).read_bytes()
+                attempts_path = runtime.channel_path(project, "attempts")
+                attempts_before = attempts_path.read_bytes()
+                payload = json.loads(path.read_text())
+                payload["usage"]["agent_calls"] = 999999
+                damaged = json.dumps(payload).encode() if corruption == "hash-mismatch" else b'{"partial":'
+                path.write_bytes(damaged)
+                state_before = runtime.read_state(project)
+                self.run_case(name, error=True, extra=("--fresh-attempt", "--prepare-only"))
+                self.assertEqual(path.read_bytes(), damaged)
+                self.assertEqual(runtime.read_state(project), state_before)
+                self.assertEqual(list(path.parent.glob("proof_loop_checkpoint.damaged-*.json")), [])
+                recovered = self.run_case(name, "blocked", extra=("--fresh-attempt",))
+                self.assertEqual(recovered["status"], "needs-evidence")
+                usage = recovered["cumulative_usage"]
+                self.assertEqual(usage["agent_calls"], 1)
+                self.assertEqual(usage["iterations"], 1)
+                self.assertEqual(usage["scope"], "since-checkpoint-recovery")
+                self.assertIs(usage["prior_totals_known"], False)
+                self.assertIn("earlier totals are unknown", recovered["usage_note"])
+                archive = project / recovered["checkpoint_recovery"]["archived_checkpoint"]
+                self.assertEqual(archive.read_bytes(), damaged)
+                self.assertEqual(runtime.sha256_file(archive), recovered["checkpoint_recovery"]["archived_sha256"])
+                self.assertEqual(Path(accepted["artifact"]).read_bytes(), old_proof)
+                self.assertTrue(attempts_path.read_bytes().startswith(attempts_before))
+                self.assertEqual(runtime.read_state(project)["proof_status"], "unresolved")
+                restarted = self.run_case(name, extra=("--fresh-attempt",))
+                self.assertEqual(restarted["status"], "referee-accepted")
+                self.assertEqual(restarted["cumulative_usage"]["agent_calls"], 3)
+                self.assertIs(restarted["cumulative_usage"]["prior_totals_known"], False)
+                self.assertEqual(restarted["checkpoint_recovery"], recovered["checkpoint_recovery"])
+
+    def test_recovery_preserves_original_checkpoint_when_first_save_fails(self):
+        self.run_case("failed-recovery-save")
+        project = self.root / "failed-recovery-save"
+        path = project / ".proof_runtime" / "proof_loop_checkpoint.json"
+        damaged = b'{"unfinished":'
+        path.write_bytes(damaged)
+        args = loop.build_parser().parse_args([str(project), "--fresh-attempt", "--codex-bin", str(self.codex)])
+        with patch.object(loop, "save_checkpoint", side_effect=OSError("mock write failure")):
+            with self.assertRaisesRegex(OSError, "mock write failure"):
+                loop.run_loop(args, project)
+        self.assertEqual(path.read_bytes(), damaged)
+        archives = list(path.parent.glob("proof_loop_checkpoint.damaged-*.json"))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), damaged)
 
     def test_contract_change_rechecks_existing_candidate_and_downgrades_status(self):
         first = self.run_case("contract")

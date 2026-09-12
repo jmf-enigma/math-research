@@ -4,8 +4,11 @@ from argparse import Namespace
 import json
 import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import venv
 from unittest.mock import patch
@@ -138,6 +141,65 @@ class ComputationScopeTests(unittest.TestCase):
         self.assertEqual(replay["status"], "input-changed")
         self.assertTrue(any("premise.py" in error for error in replay["input_errors"]))
         self.assertFalse(comp.audit_artifact(self.project, artifact["artifact_id"])["valid"])
+
+    def test_replay_interrupt_and_timeout_remove_stubborn_descendants(self):
+        def alive(pid):
+            try:
+                os.kill(pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+
+        (self.project / "stubborn.py").write_text(
+            "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "print('ready', flush=True)\ntime.sleep(60)\n")
+        for stop in ("interrupt", "timeout"):
+            with self.subTest(stop=stop):
+                pid_path = self.project / (stop + "-pids.json")
+                (self.project / "sleeper.py").write_text(
+                    "import json, os, subprocess, sys, time\nfrom pathlib import Path\n"
+                    "child = subprocess.Popen([sys.executable, 'stubborn.py'], stdout=subprocess.PIPE, text=True)\n"
+                    "if child.stdout.readline().strip() != 'ready':\n"
+                    "    child.kill(); child.wait(); raise RuntimeError('missing child handshake')\n"
+                    f"pid_path = Path({pid_path.name!r})\n"
+                    "pending = pid_path.with_suffix('.tmp')\n"
+                    "pending.write_text(json.dumps({'runner': os.getpid(), 'descendant': child.pid}))\n"
+                    "pending.replace(pid_path)\ntime.sleep(60)\n")
+                artifact = self.record(command=[sys.executable, "sleeper.py"], inputs=["sleeper.py", "stubborn.py"])
+                command = [sys.executable, str(Path(comp.__file__)), "replay", str(self.project),
+                           artifact["artifact_id"], "--timeout", "2" if stop == "timeout" else "30"]
+                controller = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                              text=True, start_new_session=True,
+                                              env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                children = {}
+                try:
+                    deadline = time.monotonic() + 10
+                    while not pid_path.exists() and time.monotonic() < deadline and controller.poll() is None:
+                        time.sleep(0.02)
+                    self.assertTrue(pid_path.exists(), "computation child did not finish its handshake")
+                    children = json.loads(pid_path.read_text())
+                    if stop == "interrupt":
+                        os.killpg(controller.pid, signal.SIGINT)
+                    stdout, stderr = controller.communicate(timeout=10)
+                    self.assertNotEqual(controller.returncode, 0)
+                    if stop == "interrupt":
+                        self.assertIn("KeyboardInterrupt", stderr)
+                    else:
+                        self.assertEqual(json.loads(stdout)["status"], "timeout")
+                    deadline = time.monotonic() + 5
+                    while any(alive(pid) for pid in children.values()) and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertFalse(any(alive(pid) for pid in children.values()), "computation process survived cancellation")
+                    self.assertFalse(comp.audit_artifact(self.project, artifact["artifact_id"])["valid"])
+                finally:
+                    if controller.poll() is None:
+                        os.killpg(controller.pid, signal.SIGKILL)
+                        controller.communicate(timeout=5)
+                    if children:
+                        try:
+                            os.killpg(children["runner"], signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
 
     def test_changed_expected_answer_cannot_validate_an_incorrect_output(self):
         for action in ("Path('expected.txt').write_text('3\\n')", "Path('expected.txt').unlink()"):

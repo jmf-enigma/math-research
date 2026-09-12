@@ -16,6 +16,10 @@ from run_referee import read_acceptance_contract
 PHASES = {"solve", "repair", "replan", "verify", "awaiting-evidence", "complete", "exact-obstruction"}
 
 
+class CheckpointIntegrityError(ValueError):
+    """The checkpoint file is damaged; the surrounding project may still be valid."""
+
+
 def empty_checkpoint(project: Path) -> dict[str, Any]:
     state = ensure_runtime(project)
     return {
@@ -47,22 +51,25 @@ def load_checkpoint(project: Path) -> dict[str, Any]:
     if not path.exists():
         return empty
     if path.stat().st_size > 2 * 1024 * 1024:
-        raise ValueError("proof checkpoint exceeds the 2 MiB limit")
-    saved = json.loads(path.read_text(encoding="utf-8"))
+        raise CheckpointIntegrityError("proof checkpoint exceeds the 2 MiB limit")
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise CheckpointIntegrityError(f"proof checkpoint cannot be decoded: {exc}") from exc
     if not isinstance(saved, dict) or saved.get("schema_version") != 1:
-        raise ValueError("unsupported proof checkpoint")
+        raise CheckpointIntegrityError("unsupported proof checkpoint")
     digest = saved.pop("checkpoint_sha256", None)
     if digest != sha256_text(canonical_json(saved)):
-        raise ValueError("proof checkpoint hash mismatch")
+        raise CheckpointIntegrityError("proof checkpoint hash mismatch")
     if (saved.get("claim_sha256"), saved.get("claim_revision")) != (
         empty["claim_sha256"], empty["claim_revision"]
     ):
         # The historical checkpoint remains on disk until a new action is saved.
         return empty
     if saved.get("phase") not in PHASES or saved.get("resume_phase") not in PHASES:
-        raise ValueError("invalid checkpoint phase")
+        raise CheckpointIntegrityError("invalid checkpoint phase")
     if not isinstance(saved.get("references"), list) or not isinstance(saved.get("repaired_routes"), list):
-        raise ValueError("invalid checkpoint references or repair history")
+        raise CheckpointIntegrityError("invalid checkpoint references or repair history")
     # Missing identity in a legacy checkpoint is unknown, not today's contract.
     return {**empty, **saved,
             "acceptance_contract_sha256": saved.get("acceptance_contract_sha256")}

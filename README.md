@@ -124,6 +124,10 @@ It preserves failed-state fingerprints, decomposition and parent-replay evidence
 
 `proof_doctor.py PROJECT` shows the next action and material evidence issues. Add `--details` for all diagnostic sections or `--json` for structured output. Inactive workflow sections stay out of the default view.
 
+The doctor checks that the ledger describes the current theorem and distinguishes a completed refutation from a completed proof. The runtime brief includes the full current claim, revision, and latest theorem-repair reason, even when newer routine events fill its recent-record window. See [recovery](references/runtime-recovery.md) for interrupted runs and damaged checkpoints.
+
+A completed refutation needs a recorded original-theorem witness and checking basis; a status label alone cannot finish it. See [recording a refutation](references/verification-gate.md#recording-a-refutation).
+
 ## Research Basis
 
 The runtime is a conservative synthesis, not a reproduction of any one proof system. [Rethlas](https://arxiv.org/abs/2604.03789) informs adaptive stage choice. [QED](https://arxiv.org/abs/2604.24021) informs stable planning, key-step attention, and proof-versus-plan failure diagnosis. [Aletheia](https://arxiv.org/abs/2602.10177) and verifier studies inform bounded generation, abstention, and cold review. The [sum-product agent](https://arxiv.org/abs/2607.20525) motivates developing a precise plan before long construction. [Beyond the Frontier](https://arxiv.org/abs/2605.25143) motivates preserving plausible historical routes.

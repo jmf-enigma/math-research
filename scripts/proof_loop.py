@@ -40,7 +40,7 @@ from run_referee import (
 )
 from start_proof import idea_rows, lemma_items, select_playbooks
 from loop_checkpoint import (
-    checked_path, empty_checkpoint, load_checkpoint, local_descriptor, make_evidence_request,
+    CheckpointIntegrityError, checked_path, empty_checkpoint, load_checkpoint, local_descriptor, make_evidence_request,
     merge_references, referee_action, save_checkpoint,
 )
 
@@ -529,6 +529,10 @@ def run_command(command: list[str], run_dir: Path, timeout: int) -> None:
         except subprocess.TimeoutExpired as exc:
             terminate_process_group(process)
             raise ValueError(f"generator timed out after {timeout} seconds") from exc
+        except BaseException:
+            # The child has its own session, so terminal Ctrl-C does not reach it.
+            terminate_process_group(process)
+            raise
     if stdout_path.stat().st_size > MAX_LOG_BYTES or stderr_path.stat().st_size > MAX_LOG_BYTES:
         raise ValueError("generator log exceeds the 4 MiB limit")
     if process.returncode != 0:
@@ -1386,14 +1390,34 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
 
     try:
         checkpoint = load_checkpoint(project)
+    except CheckpointIntegrityError as exc:
+        invalidate(f"checkpoint-integrity-failure: {exc}")
+        if not getattr(args, "fresh_attempt", False) or args.prepare_only:
+            raise
+        checkpoint = empty_checkpoint(project)
+        source = runtime_dir(project) / "proof_loop_checkpoint.json"
+        original_hash = sha256_file(source)
+        archive = source.with_name(f"proof_loop_checkpoint.damaged-{uuid.uuid4().hex}.json")
+        with source.open("rb") as reader, archive.open("xb") as writer:
+            shutil.copyfileobj(reader, writer)
+        if sha256_file(archive) != original_hash or sha256_file(source) != original_hash:
+            raise ValueError("damaged checkpoint changed during archival; the original was not replaced")
+        checkpoint["usage"].update(scope="since-checkpoint-recovery", prior_totals_known=False)
+        checkpoint["checkpoint_recovery"] = {
+            "archived_checkpoint": str(archive.relative_to(project.resolve())),
+            "archived_sha256": original_hash, "reason": str(exc), "recovered_at": utc_now(),
+        }
     except (OSError, ValueError) as exc:
         invalidate(f"checkpoint-integrity-failure: {exc}")
         raise
     if getattr(args, "fresh_attempt", False):
         invalidate("fresh-proof-attempt", checkpoint.get("result"))
         old_usage = checkpoint["usage"]
+        recovery = checkpoint.get("checkpoint_recovery")
         checkpoint = empty_checkpoint(project)
         checkpoint["usage"] = old_usage
+        if recovery:
+            checkpoint["checkpoint_recovery"] = recovery
     elif checkpoint["phase"] != "complete":
         invalidate("pending-proof-attempt", checkpoint.get("result"))
     contract_hash = sha256_text(read_acceptance_contract(project))
@@ -1435,6 +1459,9 @@ def run_loop(args: argparse.Namespace, project: Path) -> dict[str, Any]:
             **payload, "run_id": loop_id, "iterations_completed": iteration,
             "resume_phase": checkpoint["phase"], "cumulative_usage": checkpoint["usage"],
             "model_requested": args.model, "reasoning_effort": args.reasoning_effort,
+            **({"usage_note": "Counts cover execution since checkpoint recovery; earlier totals are unknown.",
+                "checkpoint_recovery": checkpoint.get("checkpoint_recovery")}
+               if checkpoint["usage"].get("prior_totals_known") is False else {}),
         })
 
     def remaining() -> int:
