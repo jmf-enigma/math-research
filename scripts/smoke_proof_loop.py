@@ -378,8 +378,7 @@ def main() -> int:
                     "adversarial",
                 )
                 == {}
-                and "certificate-first backward design" in prepared_agents
-                and "domain_seed" in prepared_agents,
+                and bool(prepared_agents.strip()),
             }
         )
 

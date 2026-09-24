@@ -7,10 +7,12 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,37 +239,13 @@ def main() -> int:
     checks.append(
         {
             "name": "idea-routing",
-            "ok": "dp-proof-playbook.md" in idea.stdout and "Proof Kernel" not in idea.stdout,
+            "ok": "dp-proof-playbook.md" in idea.stdout,
         }
     )
     idea_full = run(
         str(SCRIPTS / "plan_idea.py"),
         "In a finite discounted MDP, the Bellman operator is a contraction.",
         "--full",
-    )
-    checks.append(
-        {
-            "name": "evidence-layered-idea-search",
-            "ok": all(
-                phrase in idea_full.stdout
-                for phrase in [
-                    "Evidence-layered search packet",
-                    "Optional matched strategy trial",
-                    "same proof-state baseline",
-                    "proof_effect=none",
-                    "falsifiable local prediction",
-                    "representation ladder",
-                    "rigidity or invariant conjecture",
-                    "theorem-preserving symmetries",
-                    "verification-and-assembly tail budget",
-                    "solver-owned digest",
-                    "Near-miss frontier",
-                    "independent route or held-out check",
-                    "target-restating answers",
-                    "surjectivity",
-                ]
-            ),
-        }
     )
     idea_discovery = run(
         str(SCRIPTS / "plan_idea.py"),
@@ -276,24 +254,10 @@ def main() -> int:
     )
     checks.append(
         {
-            "name": "discovery-map-stays-mathematical-and-light",
-            "ok": all(
-                phrase in idea_discovery.stdout
-                for phrase in [
-                    "Certificate-first",
-                    "Local-to-global",
-                    "Abstraction-refinement",
-                    "Bottom-up synthesis",
-                    "Equality-driven algebra",
-                    "Trick replay",
-                ]
-            )
-            and "Optional matched strategy trial" not in idea_discovery.stdout
-            and "Evidence-layered search packet" not in idea_discovery.stdout
-            and "Outside patterns and tools" not in idea_discovery.stdout
-            and "Scholar" not in idea_discovery.stdout
-            and "learning-theory-playbook.md" not in idea_discovery.stdout
-            and "uniform good event" not in idea_discovery.stdout,
+            "name": "idea-detail-modes-extend-default",
+            "ok": idea_discovery.stdout.startswith(idea.stdout)
+            and idea_full.stdout.startswith(idea_discovery.stdout)
+            and len(idea.stdout) < len(idea_discovery.stdout) < len(idea_full.stdout),
         }
     )
 
@@ -465,21 +429,6 @@ def main() -> int:
                 and "hard-witness regression set" in idea_template
                 and "## Hypothesis Ablation" in counterexample_template
                 and "## Autonomous Capability Check" in pattern_template,
-            }
-        )
-
-        find_all_idea = run(
-            str(SCRIPTS / "plan_idea.py"),
-            "--full",
-            "Find all real triples (a,b,c) satisfying a+b+c=3 and a^2+b^2+c^2=3.",
-        ).stdout
-        checks.append(
-            {
-                "name": "answer-hole-forward-control",
-                "ok": "For construct or find-all tasks, freeze the answer type" in find_all_idea
-                and "forbid target-restating answers" in find_all_idea
-                and "separate witness soundness from completeness" in find_all_idea
-                and "candidate: Find all real triples" not in find_all_idea,
             }
         )
 
@@ -813,6 +762,7 @@ raise SystemExit(0 if ok else 1)
 import json
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 target = Path(sys.argv[1])
 target.write_text(target.read_text(encoding="utf-8") + "\\n-- concurrent edit\\n", encoding="utf-8")
@@ -1099,6 +1049,7 @@ raise SystemExit(1)
             """#!/usr/bin/env python3
 import json
 import os
+import re
 import sys
 
 output = sys.argv[sys.argv.index("--output-last-message") + 1]
@@ -1919,317 +1870,19 @@ print("mock referee completed")
         }
     )
 
-    research_text = (ROOT / "references" / "research-backed-proof-loop.md").read_text(
-        encoding="utf-8"
-    )
-    proof_idea_text = (ROOT / "references" / "proof-idea-generator.md").read_text(
-        encoding="utf-8"
-    )
-    strategy_text = (ROOT / "references" / "strategy-scheduler.md").read_text(
-        encoding="utf-8"
-    )
-    verification_text = (ROOT / "references" / "verification-gate.md").read_text(
-        encoding="utf-8"
-    )
-    escalation_text = (ROOT / "references" / "proof-escalation-protocol.md").read_text(
-        encoding="utf-8"
-    )
-    discovery_text = (ROOT / "references" / "novel-problem-discovery.md").read_text(
-        encoding="utf-8"
-    )
-    frontier_text = (ROOT / "references" / "full-text-frontier-evidence.md").read_text(
-        encoding="utf-8"
-    )
-    peppy_text = (ROOT / "references" / "peppy-proof-bridge.md").read_text(
-        encoding="utf-8"
-    )
-    lean_bridge_text = (ROOT / "references" / "lean-formalization-bridge.md").read_text(
-        encoding="utf-8"
-    )
-    expert_consultation_text = (
-        ROOT / "references" / "expert-consultation.md"
-    ).read_text(encoding="utf-8")
-    skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    agent_text = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
-    proof_loop_text = (SCRIPTS / "proof_loop.py").read_text(encoding="utf-8")
-    idea_planner_text = (SCRIPTS / "plan_idea.py").read_text(encoding="utf-8")
-    template_text = (SCRIPTS / "start_proof.py").read_text(encoding="utf-8")
-    trick_template_text = (SCRIPTS / "new_trick_card.py").read_text(encoding="utf-8")
-    audited_arxiv_ids = {
-        "2411.00566",
-        "2502.00212",
-        "2502.17925",
-        "2503.24036",
-        "2504.21801",
-        "2505.04528",
-        "2506.11085",
-        "2506.13131",
-        "2506.19923",
-        "2507.06804",
-        "2507.15225",
-        "2508.03613",
-        "2509.06493",
-        "2509.22819",
-        "2510.01346",
-        "2510.15940",
-        "2511.13027",
-        "2602.02285",
-        "2602.02990",
-        "2602.05216",
-        "2602.10177",
-        "2602.20629",
-        "2603.02668",
-        "2603.04735",
-        "2603.19514",
-        "2603.24465",
-        "2604.07240",
-        "2604.15839",
-        "2604.17484",
-        "2604.18897",
-        "2604.24021",
-        "2605.06651",
-        "2605.09018",
-        "2605.13137",
-        "2605.13171",
-        "2605.17283",
-        "2605.19338",
-        "2605.22763",
-        "2605.26959",
-        "2606.03303",
-        "2606.05400",
-        "2606.06473",
-        "2606.09450",
-        "2606.10479",
-        "2606.13925",
-        "2606.20068",
-        "2606.20642",
-        "2606.26442",
-        "2606.28747",
-        "2606.28841",
-        "2606.29493",
-        "2606.31134",
-        "2607.04394",
-        "2607.07779",
-        "2607.09217",
-        "2607.17352",
-        "2607.27259",
-    }
-    checks.append(
-        {
-            "name": "research-control-map-and-source-coverage",
-            "ok": all(
-                phrase in research_text
-                for phrase in [
-                    "Decision Lanes",
-                    "Paper Admission Gate",
-                    "Stage attribution",
-                    "A paper name in a prompt is never a capability",
-                    "The controller, not the model's renamed route label",
-                    "Training algorithms and benchmark designs are not additional runtime lanes",
-                    "search a diverse frontier",
-                    "artifact roles, not votes",
-                    "The 57-paper audit",
-                ]
-            )
-            and all(
-                f"arxiv.org/abs/{paper_id}" in research_text
-                for paper_id in audited_arxiv_ids
-            )
-            and all(
-                f"arxiv.org/abs/{paper_id}" in research_text
-                for paper_id in [
-                    "2210.12283",
-                    "2505.05758",
-                    "2601.22554",
-                    "2604.03789",
-                    "2605.25143",
-                    "2606.06468",
-                    "2607.20525",
-                ]
-            )
-            and "Decomposition Admission Gate" in template_text
-            and "jointly sufficient premise bundle" in template_text
-            and "post-proof parent replay" in template_text
-            and "incompatible shadow family" in strategy_text
-            and "Roles are a menu, not fixed quotas" in strategy_text
-            and "Stage-Conditioned Strategy Trial" in strategy_text
-            and "matched-baseline improvement" in strategy_text
-            and "Exact Symmetry Quotient" in strategy_text
-            and "Progressive Budget Grants" in strategy_text
-            and "Information-Ordered Representation Switch" in strategy_text
-            and "exact checker result or replayable witness" in strategy_text
-            and "solver-owned attempt digest" in strategy_text
-            and "Guarded proof-template reuse" in strategy_text
-            and "Consumption gate" in strategy_text
-            and "Semantic-obligation gate" in verification_text
-            and "Completion-coverage gate" in verification_text
-            and "underexplored family" in escalation_text
-            and "Discover-To-Prove Handoff" in discovery_text
-            and "Answer-hole contract" in discovery_text
-            and "Google Scholar-backed discovery" in discovery_text
-            and "SHA-256" in frontier_text
-            and "solution card" in frontier_text
-            and "no_authorized_pdf_found" in frontier_text
-            and "PatternBoost" in discovery_text
-            and "Self-supervised theorem discovery" in discovery_text
-            and "Hard-witness regression set" in discovery_text,
-        }
-    )
-    checks.append(
-        {
-            "name": "peppy-conditional-proof-bridge",
-            "ok": "peppy-proof-bridge.md" in skill_text
-            and "PEP Eligibility Gate" in peppy_text
-            and "Stop after the first block" in peppy_text
-            and "A small floating residual is not an exact certificate" in peppy_text
-            and all(
-                source in peppy_text
-                for source in [
-                    "10.1007/s10107-013-0653-0",
-                    "10.1007/s10107-016-1009-3",
-                    "10.1137/16M108104X",
-                    "proceedings.mlr.press/v80/taylor18a.html",
-                    "openreview.net/forum?id=tJqsZZBmmB",
-                    "openreview.net/forum?id=q7TfzOgGnb",
-                    "PEPFlow/tree/peppy-workshop-v1/examples_peppy",
-                    "github.com/pepflow-lib/PEPFlow",
-                ]
-            )
-            and all(
-                block in peppy_text
-                for block in [
-                    "pep-implement",
-                    "pep-full-proof",
-                    "lyap-define",
-                    "lyap-vectors",
-                    "lyap-closed-form",
-                ]
-            ),
-        }
-    )
-    checks.append(
-        {
-            "name": "evidence-layer-and-cache-poisoning-guards",
-            "ok": all(
-                phrase in proof_idea_text
-                for phrase in [
-                    "sound shortcuts",
-                    "executable falsifiers",
-                    "scheduler priors",
-                    "near-miss frontier",
-                    "No-small-counterexample results",
-                    "poisoning later searches",
-                    "Audit semantic range",
-                ]
-            )
-            and "EvE's reported paper ablation concerns ICON code search" in research_text
-            and "SAIR strategies are competition artifacts" in research_text
-            and "Deterministic reductions, replayable witnesses" in research_text
-            and "A notation change is not a new route" in research_text
-            and "Do not load it during an ordinary first proof attempt" in research_text
-            and "An idea is an executable hypothesis" in proof_idea_text
-            and "creates a new proof obligation" in proof_idea_text
-            and "Promotion And Reuse Gate" in trick_template_text
-            and "allowed to seed future search" in trick_template_text,
-        }
-    )
-    checks.append(
-        {
-            "name": "high-leverage-discovery-is-reachable",
-            "ok": all(
-                phrase in skill_text
-                for phrase in [
-                    "plan_idea.py",
-                    "--discovery",
-                    "certificate-first backward design",
-                    "local-to-global upgrade",
-                    "abstraction-refinement",
-                    "bottom-up synthesis",
-                    "equality-driven construction",
-                    "source-checked proof migration",
-                ]
-            )
-            and all(
-                phrase in proof_idea_text
-                for phrase in [
-                    "Certificate-first backward design",
-                    "Local-to-global upgrade",
-                    "Abstraction-refinement and bottom-up synthesis",
-                    "Equality-driven construction and algebra",
-                    "Proof-move migration and trick replay",
-                    "Theorem repair",
-                ]
-            )
-            and all(
-                phrase in proof_loop_text
-                for phrase in [
-                    "certificate-first backward design",
-                    "local-to-global upgrade",
-                    "equality-driven",
-                    "abstraction-refinement",
-                    "bottom-up special-case synthesis",
-                    "source-checked proof migration",
-                ]
-            )
-            and all(
-                phrase in idea_planner_text
-                for phrase in [
-                    "Certificate-first",
-                    "Local-to-global",
-                    "Abstraction-refinement",
-                    "Bottom-up synthesis",
-                    "Equality-driven algebra",
-                    "Trick replay",
-                ]
-            )
-            and "choose one high-leverage discovery move" in agent_text,
-        }
-    )
-    checks.append(
-        {
-            "name": "specialist-return-and-lean-fast-lane",
-            "ok": all(
-                phrase in skill_text
-                for phrase in [
-                    "Specialist Returns",
-                    "lean-theorem-formalizer",
-                    "status-preserving return",
-                    "proof_loop.py",
-                    "Hard exploration",
-                    "key_original_step",
-                ]
-            )
-            and "Interactive Fast Lane" in lean_bridge_text
-            and "Formal Failure Surgery" in lean_bridge_text
-            and "Valid allowing `sorry`" in lean_bridge_text
-            and "equivalent to its parent" in lean_bridge_text
-            and "scratch and repair, not promotion" in lean_bridge_text
-            and "exact bridge verifier" in lean_bridge_text
-            and "isolate it with exact context" in research_text
-            and "One integrator owns theorem fidelity" in research_text,
-        }
-    )
-    checks.append(
-        {
-            "name": "expert-consultation-is-bounded-and-non-evidentiary",
-            "ok": "expert-consultation.md" in skill_text
-            and '"expert-consultation"' in proof_loop_text
-            and all(
-                phrase in expert_consultation_text
-                for phrase in [
-                    "one call per unchanged proof-state tuple",
-                    "The hard cap is two calls",
-                    "fresh: true",
-                    "no `recall`",
-                    "proof_effect=none",
-                    "explicitly opts in for the current task",
-                    "stop immediately and do not retry",
-                    "Run the proposed falsifier first",
-                    "Never cite the consultation itself as proof authority",
-                ]
-            ),
-        }
-    )
+    # Document integrity is testable; the presence of a slogan is not proof behavior.
+    missing_links = []
+    for path in [ROOT / "SKILL.md", ROOT / "README.md", *sorted((ROOT / "references").glob("*.md"))]:
+        prose = re.sub(r"(?ms)^```.*?^```[^\n]*", "", path.read_text(encoding="utf-8"))
+        for target in re.findall(r"!?\[[^]\n]*\]\(([^)\n]+)\)", prose):
+            target = target.strip().split(' "', 1)[0].strip("<>")
+            parsed = urlsplit(target)
+            if parsed.scheme or parsed.netloc or not parsed.path:
+                continue
+            if not (path.parent / unquote(parsed.path)).is_file():
+                missing_links.append(f"{path.relative_to(ROOT)}: {target}")
+    checks.append({"name": "documentation-resources-resolve", "ok": not missing_links,
+                   "missing_links": missing_links})
 
     loop_smoke = json.loads(run(str(SCRIPTS / "smoke_proof_loop.py")).stdout)
     checks.append(

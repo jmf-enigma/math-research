@@ -1,87 +1,72 @@
 # Peppy Proof Bridge
 
-Use this bridge only for a fixed-algorithm worst-case performance claim. It connects the general proof controller to the companion `peppy` skill without making all five Peppy blocks a default checklist.
+Use for a fixed-algorithm worst-case performance claim whose encoding is justified. Resume the companion `peppy` workflow only far enough to obtain the missing proof artifact.
 
 ## PEP Eligibility Gate
 
-Enter Peppy only when all of the following are explicit.
+Require the exact algorithm recurrence/oracle calls, a function/operator class supported by valid PEPFlow primitives or finite interpolation inequalities, the theorem's normalization and scalar metric, and a finite-horizon bound or all-horizon Lyapunov/telescoping target.
 
-1. The algorithm recurrence and every oracle call are fixed.
-2. The function or operator class has valid PEPFlow primitives or finite interpolation inequalities.
-3. The initial normalization and scalar performance metric match the theorem.
-4. The target is a finite-horizon worst-case bound or an all-horizon Lyapunov/telescoping bound.
-
-Do not run Peppy merely because a problem involves optimization, learning, DP, mechanism design, or a recurrence. A reduction to a PEP model is admissible only after the reduction itself is proved. If any gate item is missing, return to the ordinary theorem fence and isolate the missing modeling lemma.
+Optimization, learning, DP, or a recurrence alone does not establish eligibility. Prove a proposed reduction before relying on its PEP result; isolate missing modeling lemmas first.
 
 ## Entry And Stop Rule
 
-Load the installed `peppy` skill and let it inspect `examples_peppy/<ALGO_NAME>/state/`. Use the next missing block only when its artifact can improve the current proof state. If `b1` through `b5` already exist, validate them instead of rerunning discovery.
+Load the installed `peppy` skill and inspect `examples_peppy/<ALGO_NAME>/state/`. Use the next missing block only when its return changes the current proof. Validate existing `b1`–`b5` artifacts before rerunning discovery.
 
-| Block | Artifact brought back to the workbench | Highest justified use before further checks |
+| Block | Return | Scope before further proof |
 | --- | --- | --- |
-| 1 `pep-implement` | Exact encoding, horizon sweep, candidate rate | Conjecture discovery and falsification |
-| 2 `pep-full-proof` | Dual support, lambda/S structure, proof residual | Finite-instance tool evidence; exact finite certificate only if independently checked |
-| 3 `lyap-define` | Grouped partial sums, rank profile, sign convention | Candidate Lyapunov object and decomposition |
-| 4 `lyap-vectors` | Sparse basis and coefficient patterns across indices | Candidate construction or recurrence |
-| 5 `lyap-closed-form` | Closed formulas, base/step/boundary identities, theorem form | Proof-ready kernel after exactness, sign, domain, and assembly gates |
+| 1 `pep-implement` | Encoding, horizon sweep, rate pattern | Conjecture/falsification. |
+| 2 `pep-full-proof` | Dual support, lambda/S structure, residual | Finite-instance evidence; exact certificate only after independent checking. |
+| 3 `lyap-define` | Grouped partial sums, rank profile, sign convention | Candidate potential/decomposition. |
+| 4 `lyap-vectors` | Sparse basis and coefficient patterns | Candidate construction/recurrence. |
+| 5 `lyap-closed-form` | Formulas, base/step/boundary identities | Proof kernel subject to the gates below. |
 
-Stop after the first block that answers the user's question. Run Blocks 3-5 only when a readable all-horizon certificate is needed. A numerical rate estimate does not justify continuing automatically, and completing Block 5 does not by itself prove a theorem whose assumptions or metric differ from the encoding.
+Stop after the first block that answers the question. Blocks 3–5 are for a needed all-horizon or readable certificate; finishing them does not repair a mismatch with the user's theorem.
 
 ## Handoff Contract
 
-Record a compact handoff in `TOOL_PLAN.md` and `LEDGER.md`.
-
-- theorem-side algorithm, class assumptions, normalization, metric, and horizon;
-- Peppy algorithm name and relevant `bN.json` path;
-- central object or certificate pattern extracted from the state file;
-- exact local identity or inequality that the artifact is meant to prove;
-- current proof status and the next unmet gate.
-
-Link to state files instead of copying dense matrices into the ledger. Put a promoted closed form into the lemma graph as a named node with its own assumptions and verification hook.
+In durable mode record the theorem-side recurrence, class, normalization, metric, and horizon; algorithm name and `bN.json` path; extracted object; exact obligation it addresses; and next unmet gate. Link state files instead of copying matrices. A promoted formula becomes a named lemma with its assumptions and downstream use.
 
 ## Promotion Gate
 
-A Peppy artifact may enter a completed proof only after checking all applicable items.
+| Gate | Required check |
+| --- | --- |
+| Fidelity | Recurrence, oracle/class, normalization, metric, and horizon match the theorem. |
+| Interpolation | Each inequality is valid under those assumptions. |
+| Exactness | Coefficients/identities are exact, reconstructed with proof, or rigorously enclosed. A small floating residual is not an exact certificate. |
+| Feasibility | Multipliers and Gram/PSD terms satisfy signs and domains. |
+| Direction | The identity has the needed inequality direction under its sign convention. |
+| Coverage | Base, interior, terminal, and exceptional parameter cases hold. |
+| Quantifiers | An indexed formula and proof establish arbitrary horizon; one `N_verify` cannot. |
+| Assembly | The certificate implies the original performance claim. |
 
-1. **Fidelity**: the encoded recurrence, oracle model, class, normalization, metric, and horizon equal the theorem's objects.
-2. **Interpolation**: every interpolation inequality is valid under the theorem's assumptions.
-3. **Exactness**: proof-bearing coefficients and identities are exact, rationalized with a proved reconstruction, or enclosed by rigorous bounds. A small floating residual is not an exact certificate.
-4. **Feasibility**: multipliers, Gram/PSD terms, and any nonnegative coefficients satisfy their sign and domain conditions.
-5. **Direction**: the Lyapunov or telescoping identity has the required inequality direction under the declared sign convention.
-6. **Coverage**: base, interior step, terminal/boundary, and exceptional parameter cases are all included.
-7. **Quantifiers**: a certificate found at one `N_verify` is not promoted to arbitrary `N` without an indexed formula and proof.
-8. **Assembly**: the exact certificate implies the original performance claim, not only the internal PEP objective.
-
-Use Wolfram, SymPy, exact Python arithmetic, or Lean for the fragile closed-form identity when useful. Independent checking should consume the extracted formula, not merely rerun the same numerical solver.
+Check extracted formulas with exact arithmetic, CAS, or Lean where useful. Repeating the numerical solver is not an independent certificate check.
 
 ## Failure Routing
 
-Do not restart Block 1 after every failure. Preserve completed state and route the first failed gate.
+| First failure | Next move |
+| --- | --- |
+| Sweep contradicts conjecture | Audit encoding, parameters, and theorem on small cases. |
+| Dense dual has no stable sparse support | Revisit certificate representation or inspect one structurally close example. A changed normalization/objective still needs a theorem mapping. |
+| Sparse certificate leaves a residual | Isolate the first residual term; repair lambda/S locally. |
+| Rank/grouping is unstable | Check indices and boundaries before finding new vectors. |
+| Coefficients fit only sampled indices | Challenge on holdouts, derive a recurrence, then prove it. |
+| Base/step/boundary/PSD/sign fails | Keep valid blocks and repair the failed obligation. |
+| Exact PEP result does not imply theorem | Prove the reduction or report a conditional result. |
 
-| Failure | Diagnosis | Next move |
-| --- | --- | --- |
-| Sweep disagrees with the conjecture | Fidelity, parameter, or theorem issue | Audit recurrence, class, normalization, metric, and small cases |
-| Dense dual exists but no stable sparse support | Certificate-representation obstruction | Change normalization/objective or inspect a structurally close completed example once |
-| Sparse certificate fails the identity | Local certificate error | Isolate the first residual term; repair only lambda/S formulas |
-| Rank profile or grouping is unstable | Decomposition or indexing obstruction | Recheck grouping and boundaries before seeking new vectors |
-| Vector coefficients fit sampled indices only | Construction remains conjectural | Add holdout indices, mine a recurrence, then prove it |
-| Closed form fails base, step, boundary, PSD, or sign | Local proof obstruction | Keep valid earlier blocks and repair the failed identity |
-| Exact PEP proof does not imply the user theorem | Assembly or fidelity obstruction | Prove the reduction or report a conditional result |
-
-For no-repeat memory, identify a Peppy attempt by the recurrence, class, metric, normalization, horizon family, and certificate support. Changing notation, solver tolerance, or `N_verify` without a new expected artifact is the same route.
+An attempt is identified by recurrence, class, metric, normalization, horizon family, and certificate support. New notation, tolerance, or verification horizon without a new expected artifact is the same route.
 
 ## Structural Analogy
 
-For an existing PEP certificate whose structure is hard to see, [Yoon et al. (2026), §§3.1–3.4](https://arxiv.org/html/2606.26077v1) give a conversion through partial sums, rank structure, and meaningful local bases before solving for analytic coefficients. Use those signals within this bridge's eligibility gate. A large raw certificate need not require a large state; conversely, renaming its entire history as a potential does not establish a simpler proof. See [structural proof compression](structural-proof-compression.md) for the replacement criterion.
+[Yoon et al. (2026), §§3.1–3.4](https://arxiv.org/html/2606.26077v1) convert PEP certificates through partial sums, rank structure, and local bases before deriving analytic coefficients. Use those signals within the eligibility gate. A large certificate can have a smaller structural explanation; renaming its full history as a potential does not supply one. Apply the [replacement criterion](structural-proof-compression.md).
 
-Completed examples may suggest a nearby certificate shape. Compare recurrence type, oracle/class assumptions, objective, active interpolation constraints, rank profile, and boundary terms before borrowing a pattern. An analogous example is an idea source, never a premise. If the borrowed structure survives a holdout horizon and exact identity check, promote only that verified structure.
+Before borrowing a completed example, compare recurrence, oracle/class, objective, active interpolation constraints, rank, and boundaries. An analogy suggests a candidate; a holdout horizon challenges it, and an exact general identity establishes its scope.
 
 ## Research Basis And Credit
 
-- [Drori and Teboulle (2014)](https://doi.org/10.1007/s10107-013-0653-0) introduced performance estimation for worst-case analysis of first-order methods.
-- [Taylor, Hendrickx, and Glineur (2017)](https://doi.org/10.1007/s10107-016-1009-3) supplied necessary and sufficient smooth strongly convex interpolation conditions and an exact finite-dimensional SDP representation; their [composite convex extension](https://doi.org/10.1137/16M108104X) covers a broader oracle model.
-- [Taylor, Van Scoy, and Lessard (2018)](https://proceedings.mlr.press/v80/taylor18a.html) developed automated tight quadratic Lyapunov analyses for first-order methods.
-- [Suh, Ying, Jiang, and Nguyen (2025)](https://openreview.net/forum?id=tJqsZZBmmB) describe PEPFlow's workflow from primal/dual PEP formulation through dual-pattern inspection and symbolic proof verification.
-- [Suh, Yoon, Nguyen, Ying, and Ma (2026)](https://openreview.net/forum?id=q7TfzOgGnb) introduce Peppy as a five-stage AI-assisted workflow. Its official command files and examples are released with PEPFlow under the [`peppy-workshop-v1` tag](https://github.com/pepflow-lib/PEPFlow/tree/peppy-workshop-v1/examples_peppy).
+- [Drori and Teboulle (2014)](https://doi.org/10.1007/s10107-013-0653-0): performance estimation for worst-case first-order analysis.
+- [Taylor, Hendrickx, and Glineur (2017)](https://doi.org/10.1007/s10107-016-1009-3): smooth strongly convex interpolation and exact finite-dimensional SDP representation; [composite extension](https://doi.org/10.1137/16M108104X).
+- [Taylor, Van Scoy, and Lessard (2018)](https://proceedings.mlr.press/v80/taylor18a.html): automated tight quadratic Lyapunov analyses.
+- [Suh, Ying, Jiang, and Nguyen (2025)](https://openreview.net/forum?id=tJqsZZBmmB): PEPFlow, from primal/dual formulation through pattern inspection and symbolic verification.
+- [Suh, Yoon, Nguyen, Ying, and Ma (2026)](https://openreview.net/forum?id=q7TfzOgGnb): Peppy's five-stage workflow, with official commands/examples in PEPFlow's [`peppy-workshop-v1` release](https://github.com/pepflow-lib/PEPFlow/tree/peppy-workshop-v1/examples_peppy).
 
-The installed block skills originate from the official Peppy command files. The companion `peppy` shortcut only selects and resumes them against the separate [PEPFlow project](https://github.com/pepflow-lib/PEPFlow). In research output, cite Peppy and PEPFlow plus the methodology source matching the encoded class. Cite PEPit or another implementation only when it was actually used.
+The installed block skills derive from the official commands; the `peppy` shortcut selects/resumes them in the separate [PEPFlow project](https://github.com/pepflow-lib/PEPFlow). Cite Peppy, PEPFlow, and methodology matching the encoded class. Cite other implementations only when used.

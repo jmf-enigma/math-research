@@ -1,51 +1,74 @@
 # Proof-loop recovery
 
-Use for a multi-session run, missing evidence, an interrupted process, or migration of an older project. Commands below assume the skill directory is the working directory and Python 3.10+ is available.
+Use for the executable runner, durable projects, missing evidence, interrupted execution, or migration. Commands assume the skill directory is the working directory and Python 3.10+ is available. Run only one controller per project.
+
+## Start and resume
 
 ```bash
-python3 scripts/proof_loop.py path/to/project --max-iterations 3
+python3 scripts/proof_loop.py path/to/project --claim "EXACT CLAIM" --max-iterations 3 --reasoning-effort high
 python3 scripts/proof_loop.py path/to/project --reference tool_checks/evidence.md
 python3 scripts/proof_loop.py path/to/project --prepare-only
 ```
 
-The checkpoint at `.proof_runtime/proof_loop_checkpoint.json` stores the theorem and acceptance-contract identity, selected plan, first error, repair budget, pending candidate, evidence request, references and hashes, and next action. Model and reasoning settings inherit from the checkpoint unless explicitly overridden. Only run one controller against a given project at a time.
+The runner creates a minimal project, generates one candidate, and sends it to a separate ephemeral referee. A surviving route gets one local repair; a failed repair or broken mechanism triggers replanning. It stops on acceptance, a named evidence request, or its budget. `--prepare-only` prepares the next packet without invoking a model.
 
-The compact runtime brief shows the current claim, its revision, and the reason for that revision. Its channel counts cover the current theorem revision; older records remain in the append-only history.
+Use `--allow-search` only for public or safely abstracted mathematics. It permits one retrieval turn after the generator identifies retrieval as the obstruction; otherwise retrieval remains an outer action. Provide project-local evidence with `--reference`. For a simplification request, retain the exact theorem in `claim.md`, put the simplification requirement under `## Acceptance Contract`, and supply the old proof as a reference.
 
-| Saved action | What the next invocation does |
+For a larger project:
+
+```bash
+python3 scripts/start_proof.py --title "SHORT NAME" --claim "EXACT CLAIM"
+python3 scripts/proof_doctor.py path/to/project
+```
+
+Use `start_proof.py --mode recovery` for prior failures, `--mode discovery` for unknown-answer exploration. A fixed claim missing a proof object stays in ordinary proof discovery. Resume from the compact runtime brief: current claim, revision, revision reason, and unresolved action. Read older ledgers only for the missing context.
+
+## Hard exploration
+
+Add `--hard-exploration` after materially different routes have failed, or a serious attempt still lacks a central object or conditional assembly. It adds at most two independent scouts and one selector. The selector chooses a supplied route, identifies its `key_original_step`, and defers plausible alternatives; it neither proves the route nor blends new plans. The historical pool keeps at most three untried routes. The selected plan survives later invocations.
+
+This mode and `--reasoning-effort max` are options for a diagnosed hard kernel, not prerequisites for ordinary proving. Model and reasoning settings inherit from the checkpoint unless overridden.
+
+## Saved action and budget
+
+`.proof_runtime/proof_loop_checkpoint.json` binds the claim and acceptance contract to the plan, first error, repair budget, pending candidate, evidence request, references, and hashes.
+
+| Saved action | Next invocation |
 | --- | --- |
-| `solve` | Continue the selected plan if there is one |
-| `repair` | Supply the rejected candidate and exact first error for the remaining local repair |
-| `replan` | Start from the target and current failure record, without the failed derivation |
-| `verify` | Recheck the same unchanged candidate; do not generate another proof |
+| `solve` | Continue the selected plan, if present |
+| `repair` | Supply the rejected candidate and first error for the remaining repair |
+| `replan` | Use the target and failure record without the failed derivation |
+| `verify` | Review the same unchanged candidate |
 | `awaiting-evidence` | Return the same request without a model call until a new or explicitly updated reference arrives |
-| `complete` | Check the claim, contract, candidate, result, referee packet/report, and references; new evidence or changed obligations triggers rechecking |
-| `exact-obstruction` | Return the obstruction until new evidence arrives or execution is explicitly restarted |
+| `complete` | Recheck claim, contract, candidate, result, referee packet/report, and references; changed obligations or new evidence requires review |
+| `exact-obstruction` | Return the gap until new evidence or an intentional restart |
 
-`--max-iterations` and `--max-wall-seconds` grant resources to this invocation. The checkpoint also reports cumulative generator iterations, agent calls (including scouts/referees/failures), and observed controller wall time for the current theorem revision. These are not token counts or monetary costs. Abrupt host termination can prevent a final wall-time update. A prepared packet is not a model call. Ctrl-C stops the controller's current generator or referee process group and preserves the saved next action; an interrupted referee resumes with the same candidate. Forced host or process termination may bypass that cleanup.
+Each invocation grants its own `--max-iterations` and `--max-wall-seconds`. Cumulative counts cover generator iterations, all agent calls, and observed controller wall time for the theorem revision; they are not token or cost totals. A prepared packet is not a model call. Ctrl-C terminates the active generator/referee process group and preserves the next action. Interrupted review resumes the same candidate. Forced host termination may bypass cleanup or the final time update.
 
-Use `--fresh-attempt` to intentionally reset execution while keeping failure history and the cumulative counts from a valid checkpoint. It is not a new theorem. To repair a theorem, edit the claim and routing files consistently, update the ledger's Claim and proof status to match the revised statement, then run:
+## Revisions and evidence
+
+`needs-evidence` names the local claim, assumptions, missing artifact, capability, acceptance test, and resume action. Supply that artifact rather than restarting discovery. Tool replay, retrieval, and uncertain mathematical review are different requests. A correct proof with `simplification-gap` replans; it does not wait for external evidence or make the theorem false. Malformed referee output is a retryable execution failure.
+
+A changed reference must be supplied again explicitly. Changes during review cannot accept or retire a route: the verdict and accepted Markdown are bound to the checked packet. Changing only the acceptance contract returns the existing candidate to review. Legacy completion without contract or referee-packet identity also needs review.
+
+A theorem repair requires consistent edits to the claim, routing, and ledger, followed by:
 
 ```bash
 python3 scripts/proof_runtime.py revise-claim path/to/project --reason "Exact change and why it is needed"
 ```
 
-Old attempts remain in append-only history. Hard route exclusions require the current claim hash, revision, and acceptance-contract hash. Failures from older or unknown contracts remain available as historical search hints; inspect whether their failure conditions still apply. Unversioned historical route fingerprints are not trusted as new hard exclusions. With an older project that has no checkpoint, inspect its last packet before choosing a fresh action and supply useful artifacts as references. The controller does not infer a reliable pending action from old prose logs.
+History remains append-only. Hard exclusions apply only to the same claim hash, revision, and acceptance contract. Older failures are hints to recheck; duplicate scout proposals are not mathematical failures. For a legacy project without a checkpoint, inspect its last packet and supply useful artifacts explicitly—the controller cannot recover a reliable next action from prose alone.
 
-A stale reference cannot silently change a pending proof: provide its path again explicitly, then let the pending action recheck it. A changed accepted artifact or a damaged checkpoint clears active referee acceptance and produces a runtime error. Starting a fresh attempt also clears that active acceptance while retaining its historical evidence. Preserve the historical files, inspect the mismatch, and use an intentional fresh attempt or theorem repair as appropriate. `--prepare-only` does not change the active acceptance status.
+## Restart and damaged checkpoints
 
-For a damaged checkpoint, an explicit `--fresh-attempt` first copies its exact bytes to a uniquely named `.proof_runtime/proof_loop_checkpoint.damaged-*.json` archive and verifies that copy. The original path is replaced only when the clean checkpoint can be saved. The damaged file's proof state, settings, references, and counters are not reused; provide the needed references and settings again. New counters carry `scope=since-checkpoint-recovery` and `prior_totals_known=false`, and the summary names the archive and explains that earlier totals are unknown. Those labels survive later resumptions and fresh attempts for this theorem revision. Existing run histories and proof artifacts remain available for inspection. Without `--fresh-attempt`, or with `--prepare-only`, a damaged checkpoint still produces an error and is not archived or replaced.
+`--fresh-attempt` resets execution, clears active acceptance, and retains history and the valid checkpoint's cumulative counts. It does not create a new theorem. A changed accepted artifact or damaged checkpoint raises an error and clears active acceptance; preserve the files and inspect the mismatch. `--prepare-only` does not change active acceptance.
 
-Changing only `## Acceptance Contract` in `claim.md` also invalidates completion. The existing candidate returns to verification, and the runtime status becomes unresolved while that review is pending. Legacy completed checkpoints without a recorded contract identity or referee-packet hash must be reviewed again. A verdict binds to the frozen packet's claim, contract, proof, and references; changes during review cannot accept or retire a route. The accepted Markdown is written from that checked snapshot.
+For a damaged checkpoint, explicit `--fresh-attempt` archives its exact bytes as `.proof_runtime/proof_loop_checkpoint.damaged-*.json` and verifies the backup before saving a clean checkpoint. Damaged settings, counters, and references are not reused; supply them again. New counters carry `scope=since-checkpoint-recovery` and `prior_totals_known=false`, including on later resumes. Earlier histories remain inspectable. Without an explicit restart—or with `--prepare-only`—the damaged file is neither archived nor replaced.
 
-Duplicate scout routes are bookkeeping events, not failed mechanisms. The reader ignores legacy duplicate-only retirements and exclusions propagated from them, while preserving explicit retirements and recorded mathematical failures.
-
-`needs-evidence` is a request to the proof owner, not an automatic external invocation. Its packet contains a local claim, assumptions, requested capability, missing artifact, acceptance test, candidate identity when available, and resume phase. A `tool-replay` request differs from literature retrieval; an uncertain model verdict is not a route refutation. Malformed referee output is a retryable runtime failure, not a request to wait indefinitely for unspecified mathematical evidence.
-
-The runtime's `referee-accepted` label means a model accepted a candidate. `evidence_summary` records proof/refutation disposition and keeps `human_reviewed` and `formal_verification` false. Independent mathematical review and formal replay remain separate actions.
+`referee-accepted` records model review of the stated proof/refutation. Its evidence summary does not assert human review or formal verification.
 
 ## Skill rename
 
-The repository is now `jmf-enigma/math-research`; the installed skill and explicit invocation are `math-research` and `$math-research`. The previous repository was `codex-theory-proof-workbench`, with skill directory `theory-proof-workbench`.
+The repository is `jmf-enigma/math-research`; the installed skill and invocation are `math-research` and `$math-research`. The old repository was `codex-theory-proof-workbench`, with skill directory `theory-proof-workbench`.
 
-Back up the old installation, install the new version under `math-research`, update its Git remote if it is a clone, and update saved commands and neighboring skill references. Existing proof-project directories, claims, ledgers, and checkpoints do not need renaming. Remove the old `SKILL.md` from skill discovery after migration. If saved project commands still use the old scripts path, a compatibility directory containing a `scripts` symlink to the new installation can preserve those commands without registering a duplicate skill.
+Back up the old installation, install under `math-research`, and update its remote and saved commands. Existing proof-project directories and checkpoints need no renaming. Remove the old `SKILL.md` from discovery. If saved commands require the old scripts path, retain a compatibility directory with a `scripts` symlink, without registering a duplicate skill.

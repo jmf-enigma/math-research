@@ -1,44 +1,23 @@
-# Lower Bounds Playbook
+# Lower bounds
 
-Use for minimax lower bounds, bandit lower bounds, impossibility results, sample complexity, regret lower bounds, and information-theoretic arguments.
+Use for minimax risk, sample complexity, regret, oracle complexity, and impossibility. Fix the algorithm class, information available to it, loss, and quantifier order. An instance chosen with access to an algorithm's private randomness may violate the adversary model.
 
-## Branch Split
+## Construct the decision conflict
 
-- Two-point lower bound: Le Cam, total variation, KL/Pinsker.
-- Multi-hypothesis lower bound: Fano or Assouad.
-- Bandit lower bound: change of measure and expected pull counts.
-- Optimization lower bound: resisting oracle or hard quadratic family.
-- Mechanism impossibility: finite type profile construction or cycle/monotonicity violation.
-- Communication/information bottleneck: mutual information or data processing.
+A useful hard family forces different good decisions while keeping observation laws close. Prove both facts; parameter separation alone need not imply loss separation.
 
-## Smart Routes
+| Obstruction | Kernel | Required check |
+| --- | --- | --- |
+| Binary decision conflict | Le Cam/testing bound | Admissible alternatives, decision-loss gap, and total variation or KL control |
+| Many distinguishable decisions | Fano packing | Packing separation, entropy/cardinality, and mutual-information bound |
+| Many local binary choices | Assouad cube | Loss decomposes across coordinates; adjacent hypotheses remain hard to distinguish |
+| Adaptive sampling | Change of measure | KL chain rule under the actual history; divergence weighted by expected sample counts |
+| Restricted optimization oracle | Hard family or resisting oracle | Oracle replies remain consistent with an admissible instance; dimension and query limits match |
+| Mechanism impossibility | Finite type/deviation constraints | Every forced inequality follows from the exact IC, IR, feasibility, and randomization requirements |
+| Communication constraint | Information bound and data processing | Transcript includes all permitted messages, public randomness, and side information |
 
-- Start with two instances; only use Fano/Assouad after the binary construction is clear.
-- Make instances close enough in observations but far enough in required decision.
-- Compute KL exactly before choosing parameters.
-- Convert testing error into regret/risk via a decision gap.
-- For bandits, ensure the algorithm must sample the confusing arm enough.
-- For mechanisms, construct types that force contradictory IC/monotonicity constraints.
+Try two instances when the conflict is binary. Start with a packing or cube when the claimed dimension dependence needs many alternatives. Compute or upper-bound divergence under the actual observation model before optimizing the gap.
 
-## Common Lemmas
+A Bayes risk lower bound under a prior supported on the admissible class also bounds worst-case risk for each allowed algorithm; retain the infimum over algorithms to obtain a minimax bound. A lower bound for one fixed algorithm does not establish that infimum.
 
-- Le Cam two-point method.
-- Pinsker inequality.
-- Bretagnolle-Huber inequality.
-- Fano inequality.
-- Assouad cube method.
-- Bandit change-of-measure lemma.
-
-## Counterexample Tests
-
-- Hard instances accidentally distinguishable too quickly.
-- Alternative instance violates model assumptions.
-- Gap too small to imply target loss.
-- Prior/hypothesis set not symmetric enough.
-- Lower bound only proves Bayesian, not minimax, without transfer.
-
-## Tool Hooks
-
-- Python/SymPy for KL and parameter optimization.
-- Z3 for finite impossibility profiles.
-- CVXPy/LP duality for adversarial distributions or certificates.
+Stress the construction by checking support mismatch, informative side observations, inadmissible alternatives, and a decision gap too small to imply the target rate. Exact KL and finite feasibility calculations can expose these failures early.

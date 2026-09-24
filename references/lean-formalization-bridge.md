@@ -1,24 +1,16 @@
 # Lean Formalization Bridge
 
-Use this protocol when a Math Research node is mathematically stable enough to formalize. The bridge records an immutable request and a replayable Lean result; it does not turn Lean compilation into evidence for an unencoded or incompletely assembled theorem.
+Use when a node's mathematics is stable enough to formalize. The bridge freezes a request and returns a replayable result for that encoded target.
 
 ## Escalation Gate
 
-Send a node to Lean only when it has:
-
-- an exact statement with domains and assumptions;
-- a role: `local-lemma`, `interface-theorem`, or `full-theorem`;
-- declared dependencies and a named downstream use;
-- a namespace-qualified Lean target and declaration kind;
-- no unresolved semantic ambiguity that Lean would merely encode.
-
-Keep discovery in Math Research when the statement, central object, construction, or mathematical route is still moving.
+Require an exact statement, domains/assumptions, dependencies, downstream use, namespace-qualified Lean target, and role: `local-lemma`, `interface-theorem`, or `full-theorem`. Resolve semantic ambiguity before encoding. Keep changing objects and proof discovery in Math Research.
 
 ## Vocabulary Gate
 
-Research mathematics often needs project-specific structures or predicates that Mathlib does not provide. Before the main theorem uses one, freeze its intended informal meaning and require a small characterization suite: at least one positive witness or constructor, one exclusion or boundary example, and the exact auxiliary properties consumed downstream. Compile and inspect these checks independently. A definition that makes the theorem easy by becoming empty, vacuous, over-strong, or semantically shifted fails the gate even if Lean accepts it.
+For a project-specific definition, state its intended meaning and check a positive witness/constructor, an exclusion or boundary, and the properties consumed downstream. Inspect these independently of the main proof. Empty, vacuous, over-strong, or shifted definitions fail fidelity even if compilation succeeds.
 
-When a prover edits a proof, replay it against the frozen original declaration rather than accepting a rewritten statement. Record any definition or type change in the assumption-and-definition lineage before preparing a new handoff.
+Replay repairs against the frozen original declaration. A changed definition, type, or statement needs recorded lineage and a new request.
 
 ## Prepare A Request
 
@@ -35,41 +27,41 @@ codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/lean
   --downstream-use "closes the monotonicity step"
 ```
 
-The request in `lean/handoffs/` freezes the project claim hash and revision, node statement, statement-source path and hash when file-backed, dependencies, target, and source-fidelity notes. Relative statement paths resolve inside the proof project. `packet_sha256` detects silent edits. If the theorem or node changes, prepare a new request instead of editing the old one.
+The immutable request in `lean/handoffs/` binds the claim hash/revision, node statement, file-backed statement path/hash, dependencies, target, and fidelity notes. Relative statement paths resolve inside the project; `packet_sha256` detects edits. Prepare a new request when the claim or node changes.
 
-For a full theorem, the command also creates an acceptance report. Its four gates start as `not-audited`:
+A `full-theorem` request also creates an acceptance report:
 
-- `claim_fidelity`: the checked Lean target has the same force as the fenced claim;
-- `assumption_lineage`: every added assumption is sourced, derived, an explicit interface, or theorem repair;
-- `assembly_coverage`: every required child and edge case reaches the final target;
-- `axiom_audit`: dependencies contain only accepted foundational or project axioms.
+| Gate | Required evidence |
+| --- | --- |
+| `claim_fidelity` | The checked target has the same force as the original claim. |
+| `assumption_lineage` | Every added assumption is sourced, derived, an explicit interface, or declared theorem repair. |
+| `assembly_coverage` | Required children and edge cases reach the final target. |
+| `axiom_audit` | Dependencies use only accepted foundational/project axioms. |
 
-Each passing gate needs concrete evidence text. Lean compilation alone cannot fill these fields.
+All begin `not-audited`. Compilation cannot fill them. The report's `target_binding` hashes the target, project-local Lean sources, and Lean/Lake configuration; a change resets every gate. For a legacy report without a binding, verify to initialize it, inspect the current target/dependencies, fill the gates with evidence, then verify with `--promote-final`. Historical result packets retain the old audit.
 
-The report's `target_binding` records the audited Lean target, project-local Lean sources, and Lean/Lake configuration hashes. A changed binding resets all four gates to `not-audited`; it cannot inherit the old statement-fidelity audit. For an existing report without this binding, run verification once to initialize it, inspect the current target and dependencies, fill the four gates with current evidence, then verify again with `--promote-final`. Old result packets retain their earlier audit for inspection.
-
-The source binding excludes generated package caches under `.lake`. Pin external dependencies in the project configuration and inspect their actual environment during the axiom audit; the local source hashes do not certify an externally modified package cache.
+The binding excludes generated `.lake` caches. Pin external dependencies in configuration and inspect their actual environment during the axiom audit; local hashes do not certify a modified package cache.
 
 ## Interactive Fast Lane
 
-When the current task exposes the Lean MCP tools, keep the request immutable and iterate only on the target file. Read `lean_goal`, run `lean_local_search`, test at most three materially distinct snippets with `lean_multi_attempt`, inspect `lean_code_actions`, and re-read diagnostics. Use `lean_run_code` only for self-contained elaboration experiments and `lean_verify` for an axiom/source audit.
+When Lean MCP tools are available, iterate only on the target file while keeping the request immutable. Use `lean_goal`, `lean_local_search`, a bounded set of materially different `lean_multi_attempt` snippets, `lean_code_actions`, and diagnostics as needed. Reserve `lean_run_code` for self-contained elaboration experiments and `lean_verify` for axiom/source inspection.
 
-This lane is scratch and repair, not promotion. A REPL rejection is provisional because the tactic mode is experimental, and an MCP success proves only the tested state. Write the winning script into the intended file and run the exact bridge verifier below. If the state repeats or the failure concerns statement fidelity, mathematics, or global assembly, stop local repair and return ownership to Theory.
+This is scratch and repair, not promotion. Experimental REPL rejection is provisional; success covers only the tested state. Write the surviving script into the intended file and run the exact bridge verifier. Repeated states or fidelity/mathematical/assembly failures return to Math Research.
 
 ## Formal Failure Surgery
 
-Activate this only when the theorem target is frozen, the proof skeleton is coherent, and bounded local repair has left a proof-block failure. A parse, import, type, premise, fidelity, mathematical, or assembly failure goes back to its own layer instead.
+Use only for a frozen target with a coherent skeleton and a remaining local proof-block failure. Parse, import, type, premise, fidelity, mathematical, and assembly failures return to their own layer.
 
-1. Read the first primary diagnostic and find the smallest enclosing structured block. For nested `have` or `replace` blocks, replace only the failing proof body. Replace a failing `calc` or `choose` block as one unit. If no parsed block exists, cut only at the reported site. Make one edit and recompile immediately; later messages may be cascade noise from the first error.
-2. Continue until the frozen skeleton is structurally valid with a small number of `sorry` placeholders or until the code repeats, times out, stops changing, or exceeds the repair budget. “Valid allowing `sorry`” is skeleton salvage only. It is not evidence for the child goal or parent theorem.
-3. At each placeholder, extract the exact tactic state as a standalone declaration. Preserve all local variables, hypotheses, typeclass assumptions, imports, and the intended parent use. A hypothesis may be removed only after showing that both the child theorem and its reassembly remain faithful.
-4. Gate the extracted child twice. First require Lean well-formedness. Then audit semantic entailment from the frozen local context, attack it for a counterexample or missing premise, and check the exact reassembly interface. Mechanical extraction can faithfully isolate a false step from a bad strategy.
-5. Solve a validated child independently and recurse only when it is strictly simpler. Stop if the child is equivalent to its parent, the same failure fingerprint returns, or a bounded retry creates no proof-state delta.
-6. Reinsert only a verified child. Replay the original frozen target, scan for `sorry` and admitted or unexpected axioms, then rerun claim-fidelity, assumption-lineage, assembly-coverage, and axiom gates.
+1. Locate the first primary diagnostic and smallest enclosing structured block. Replace only a failed `have`/`replace` body; treat a failing `calc`/`choose` as one block. If parsing failed, cut only at the diagnostic. Recompile after each edit; later errors may be cascades.
+2. Temporary `sorry` placeholders may isolate failures within the repair budget. “Valid allowing `sorry`” salvages a skeleton; it proves no child or parent.
+3. Extract each isolated goal with all variables, hypotheses, typeclasses, imports, and parent use. Removing a hypothesis requires both the child and reassembly to remain faithful.
+4. Check well-formedness, then semantic entailment from the frozen context and the reassembly interface. Extraction can faithfully isolate a false step.
+5. Recurse only on a strictly simpler validated child. Stop on a child equivalent to its parent, a repeated failure fingerprint, or no smaller remaining obligation.
+6. Reinsert a verified child and replay the frozen parent; audit admissions, axioms, fidelity, lineage, and coverage again.
 
-`lean_bridge.py verify` writes this bounded repair policy into `formal_failure_surgery` when it classifies a first local-proof failure. A repeated identical local failure returns ownership to Math Research rather than starting the same surgery again.
+On the first classified local-proof failure, `lean_bridge.py verify` records this policy in `formal_failure_surgery`; a repeated identical failure returns ownership to Math Research.
 
-AXLE-style remote extraction and verification may be useful for a non-sensitive, standard single-file target when the user explicitly approves source sharing. Local checking remains the default. A remote pass cannot replace the bridge's claim-fidelity, assumption-lineage, assembly-coverage, or axiom gates, and a service limitation or stricter-verifier gap must be recorded in the result packet.
+Remote extraction/checking is optional for a suitable single-file target. Use it only when existing user authorization covers sharing that source. A remote result does not replace the bridge's four gates; record service limitations or differences from the intended verifier.
 
 ## Verify And Return
 
@@ -79,37 +71,28 @@ codex-math-python "${CODEX_HOME:-$HOME/.codex}/skills/math-research/scripts/lean
   --runner auto
 ```
 
-The verifier calls the companion `lean-theorem-formalizer` status checker, requires affirmative compile, blocker, and exact-declaration results, compares source/configuration hashes before and after checking, writes a unique result packet, and appends the result to `.proof_runtime`. It revalidates file-backed informal statements and the frozen claim revision. Missing checker fields or inputs changed during checking cannot pass the target gate.
+The companion `lean-theorem-formalizer` checker must affirm compilation, absence of blockers, and the exact declaration. The bridge compares source/configuration hashes before and after checking, revalidates the file-backed statement and claim revision, writes a unique result, and appends it to `.proof_runtime`. Missing checker fields or changed inputs cannot pass.
 
-Use `--failure-stage statement-fidelity`, `mathematical`, or `assembly` when Lean exposed a problem outside local proof repair. Use `--diagnosis` only for a root-cause judgment grounded in the exact diagnostic, and `--repair` for one bounded next edit. The raw diagnostic remains preserved.
+Use `--failure-stage statement-fidelity`, `mathematical`, or `assembly` for nonlocal failures. `--diagnosis` records a root cause grounded in the preserved diagnostic; `--repair` names one bounded next edit.
 
 ## Ownership Rule
 
-| Result | Next owner |
+| Result | Next action |
 | --- | --- |
-| Exact target passes | Theory integrator assembles the verified node |
-| First parse, import, type, premise, or local proof failure | Lean formalizer repairs once |
-| Same failure class, site, and diagnostic fingerprint repeat | Math Research retrieves, re-decomposes, or audits the statement |
-| Statement-fidelity, mathematical, or assembly failure | Math Research immediately |
-| Full theorem passes but an acceptance gate is missing | Theory integrator completes the audit; status stays below complete |
+| Exact node passes | Assemble its downstream use at the checked scope. |
+| First parse/import/type/premise/local-proof failure | Lean formalizer repairs once. |
+| Same failure class, site, and diagnostic repeat | Math Research retrieves, re-decomposes, or audits the statement. |
+| Fidelity/mathematical/assembly failure | Math Research immediately. |
+| Full theorem compiles but an acceptance gate is missing | Complete the audit; status stays below complete. |
 
-`formalized-local` applies only to the checked node. Use `--promote-final` only for a `full-theorem` request after all four acceptance gates pass. A tampered request, stale claim revision, missing target, placeholder, target-encoding axiom, or incomplete acceptance report blocks promotion.
+`formalized-local` applies only to the checked node. `--promote-final` requires a `full-theorem` request and all four gates. Tampering, stale claim revision, missing target, placeholders, target-encoding axioms, or incomplete acceptance blocks promotion.
 
-If rechecking the request that supplied full completion fails or finds stale acceptance gates, its active completion is revoked. `proof_doctor.py` also checks recorded formal results, their current sources, checker, request, and acceptance report before recommending finalization. Legacy results without current provenance must be checked again. Corrupt runtime records remain explicit blockers instead of disappearing as absent evidence.
+A failed recheck of the request supplying completion, or stale acceptance gates, revokes that active completion. The doctor checks current sources, checker, request, acceptance report, and runtime provenance. Recheck legacy records without provenance; corrupt records remain blockers.
 
-During nonfinal work, a named mathematical repair or missing-premise search can take precedence over a reminder to replay a failed formal node. The node's evidence remains invalid until it is checked again; identifying its first error does not restore completion.
+During nonfinal work a named mathematical repair or premise search may precede replay of a failed node. Its evidence remains invalid until checked again.
 
 ## Return Packet
 
-The Lean-to-Theory result records:
+Preserve the checker command/exit, request/source hashes, target status, raw diagnostic/site, failure class/fingerprint, root-cause judgment, proposed repair, change in remaining obligations, prior identical failures, repair contract if applicable, next owner, and promotion eligibility.
 
-- exact checker command and exit code;
-- request and Lean-file hashes;
-- target gate and node status;
-- raw diagnostic and diagnostic site;
-- failure class, diagnostic fingerprint, inferred root cause, repair, and proof-state delta;
-- a formal-failure-surgery contract for a first local-proof failure, including its semantic child gates and recursion stop;
-- prior count of the same failure signature;
-- recommended owner and final-promotion eligibility.
-
-Treat the result as evidence about the encoded target. The parent theorem remains conditional until the AND-path is assembled and its acceptance obligations are discharged.
+The result certifies only its encoded target and stated trust basis. The parent remains conditional until its required dependency path and acceptance obligations are discharged.

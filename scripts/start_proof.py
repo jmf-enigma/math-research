@@ -89,7 +89,7 @@ No active workstream is required until a branch needs durable state. For a small
 
 ## Multi-Agent Dispatch Gate
 
-Use actual parallel agents only after the user explicitly asks for or approves multi-agent work. The coordinator/integrator remains responsible for statement fidelity, route choice, and final proof status.
+Use actual parallel agents when the active session permits delegation and independent bounded work can advance the proof. The coordinator/integrator remains responsible for statement fidelity, route choice, and final proof status.
 
 Good role split:
 
@@ -125,7 +125,7 @@ Use this only when several routes are live. Classify by mathematical mechanism, 
 
 ## Portfolio Checkpoint
 
-Use this only after a bounded round with several live families. Preserve one incompatible shadow while the leading kernel is unresolved; do not fund every family equally.
+Use this only after a bounded round with several live families. Retain an alternative only if it has a distinct mechanism and a useful bounded probe.
 
 - leading family and decisive next artifact:
 - incompatible shadow family and bounded probe:
@@ -168,7 +168,7 @@ Use this when several proof sketches are plausible. Keep it small, attach one ch
 ## Step Challenge Board
 
 Use this for multi-step proof plans. Each fragile step needs both gates before it can become part of the final proof.
-Set a small cap before starting, such as 1-2 challenge rounds per step and 1 re-plan per route unless the user explicitly grants a larger budget.
+Use bounded local checks and respect any user-specified budget. Replan when feedback leaves the same gap unchanged; continue a productive check when it can discharge the obligation.
 
 | step | declared goal | verification tag | goal gate | logic gate | verdict | trace-back or re-plan note |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -252,7 +252,7 @@ Copy this block only when a branch is hard, repeated, multi-lemma, tool-assisted
 
 #### Look At How Others Do It Gate
 
-Fill this before heavy execution unless it is intentionally skipped.
+Fill this when a named missing premise or proof pattern makes retrieval useful. A direct proof does not need a preliminary literature scan.
 
 - related local drafts, papers, appendices, or prior ledgers:
 - theorem or proof names to search:
@@ -285,7 +285,7 @@ Fill this before heavy execution unless it is intentionally skipped.
 ## Parallelization Rule
 
 - Treat these as roles first, not automatic agents.
-- Use actual parallel agents only when the user explicitly asks for delegation or parallel agent work, and after the dispatch gate above has non-overlapping assignments.
+- Follow the active session's delegation permissions and assign non-overlapping work through the dispatch gate above.
 - Each branch must have a bounded output and a stop rule before execution.
 - Do not let two agents own the same file or the same proof route unless one is reviewer-only.
 - When agents return, update `LEDGER.md`, `WORKSTREAMS.md`, or `PATTERN_SCAN.md` with the artifact, not the full transcript.
@@ -336,8 +336,7 @@ This page is optional. Fill it only when the proof route is unclear, the theorem
 
 ## Divergence Before Convergence
 
-For hard or previously failed proofs, fill three short candidates before choosing a long route. They must differ by central object, certificate, failure world, or evidence source.
-Develop the candidates independently before comparing them; do not let the current favorite become the premise of every lane.
+Start with one motivated route. Add a candidate only when an obstruction makes a different object, certificate, or falsification useful; unused lanes may remain blank. When comparing alternatives, derive them independently rather than assuming the current favorite.
 
 | lane | candidate route | central object | evidence or check | why not a repeat |
 | --- | --- | --- | --- | --- |
@@ -355,6 +354,8 @@ Develop the candidates independently before comparing them; do not let the curre
 
 ## Idea Engines Tried
 
+Choose only a lens that addresses the current obstruction; unchecked items are not unfinished work.
+
 - [ ] failure-world engine
 - [ ] assumption-to-machine engine
 - [ ] central-object engine
@@ -370,7 +371,7 @@ Develop the candidates independently before comparing them; do not let the curre
 
 ## Novel Problem Discovery
 
-Fill this only when the answer, object, formula, construction, or decisive concept is genuinely unknown. Otherwise leave the template choices unchanged and continue with the ordinary proof loop.
+Fill this for an unknown-answer research question or a novelty claim that needs frontier evidence. A missing helper object or proof idea inside a fixed theorem stays in the ordinary proof loop; leave these template choices unchanged unless frontier discovery is in scope.
 
 - frontier scan status: not run / completed
 - search cutoff date:
@@ -399,7 +400,7 @@ Fill this only when the answer, object, formula, construction, or decisive conce
 
 ## Candidate Central Lemma
 
-Start from one of these candidates, then sharpen it.
+Use a suggested candidate only if its assumptions hold and it simplifies the parent claim. Otherwise derive the kernel from the current obstruction.
 
 {central_lemma}
 
@@ -464,7 +465,7 @@ Use this only when the kernel needs a clever object or non-obvious manipulation.
 
 ## Route Candidate Board
 
-Keep 2-4 routes when the proof needs invention.
+Keep the current route and only alternatives motivated by distinct mechanisms or failures. No route quota is required.
 
 | route | central object | why plausible | verification hook | novelty axis | gap grade | status | retire if |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -511,14 +512,14 @@ PLAYBOOK_GUIDES = {
             ),
             (
                 "convergence or average-cost route",
-                "prove contraction/monotone convergence or ACOE with recurrence and bias conditions",
+                "prove contraction on a closed function class, justified value-iteration convergence, or an ACOE with the required terminal-bias bound",
                 "beta near 1, transient classes, unbounded value/bias, unstable policy",
                 "CVXPy/LP for finite MDP certificates; NetworkX for recurrent classes",
             ),
         ],
         "lemmas": [
             "The Bellman operator is well-defined on the stated value-function class.",
-            "The candidate policy satisfies Bellman equality and all off-policy Bellman inequalities.",
+            "The candidate satisfies Bellman equality and off-policy inequalities; integrability and terminal terms justify comparison with every policy in scope.",
             "The Q-value difference has the monotonicity or single-crossing property needed for the claimed structure.",
             "Boundary states, tie-breaking, and finite/infinite horizon distinctions preserve the claimed policy.",
         ],
@@ -526,20 +527,20 @@ PLAYBOOK_GUIDES = {
             (
                 "Q-value difference",
                 "nonthreshold or nonmonotone action choices",
-                "increasing differences, monotone transitions, value induction",
+                "Bellman preservation of action-difference order, feasible-action dependence, and tie convention",
                 "finite grids plus Wolfram/SymPy sign checks",
             ),
             (
                 "Bellman inequality certificate",
                 "a feasible action beating the candidate policy",
-                "discounting, well-defined value function, feasible action correspondence",
+                "integrable finite-horizon identities, admissible policy, and valid discounted or average-reward terminal conditions",
                 "finite MDP LP/CVXPy certificate or direct Bellman inequalities",
             ),
             (
                 "Bellman operator on a function class",
                 "loss of monotonicity, convexity, or threshold structure after one step",
-                "operator monotonicity, lattice order, contraction or finite-horizon induction",
-                "prove preservation on a two-state/two-action toy model first",
+                "terminal/base function in the class and closure under transitions, expectation, and optimization",
+                "test disputed closure on a small model, then prove it on the full function class",
             ),
         ],
     },
@@ -547,7 +548,7 @@ PLAYBOOK_GUIDES = {
         "attacks": [
             (
                 "KKT or dual certificate",
-                "prove convexity/concavity, constraint qualification, and complementary slackness",
+                "verify a feasible KKT certificate under convexity, or a matching feasible primal-dual bound; justify multiplier existence separately when needed",
                 "active constraints, nonconvex local optima, nonunique optima, zero denominators",
                 "Wolfram/SymPy for algebra; CVXPy for primal-dual sanity checks",
             ),
@@ -581,19 +582,19 @@ PLAYBOOK_GUIDES = {
             (
                 "KKT or subgradient system",
                 "local optimum mistaken for global optimum or ignored boundary",
-                "convexity/concavity, constraint qualification, feasible set regularity",
+                "convex program and feasible KKT conditions; a separate qualification or duality argument when deriving multipliers",
                 "Wolfram/SymPy algebra plus active-set checks",
             ),
             (
                 "dual certificate",
                 "candidate objective value is not globally optimal",
-                "strong duality, weak duality, complementary slackness",
+                "weak duality, primal-dual feasibility, and a matching objective bound",
                 "CVXPy primal-dual sanity check then exact certificate",
             ),
             (
                 "exchange invariant",
                 "a local swap or deviation improves the solution",
-                "matroid, submodularity, convexity, or monotone marginal structure",
+                "legal improving exchanges and a termination or canonical-form argument",
                 "small integer instances and local exchange checks",
             ),
             (
@@ -608,13 +609,13 @@ PLAYBOOK_GUIDES = {
         "attacks": [
             (
                 "single-parameter IC route",
-                "prove allocation monotonicity and derive payments from envelope/payment identity",
+                "fix DSIC versus BIC and the type model, then prove the appropriate allocation monotonicity and payment identity",
                 "two-type deviations, lowest-type IR, boundary payments, nonmonotone allocation",
                 "Z3/linear inequalities for finite IC/IR; Wolfram for envelope derivatives",
             ),
             (
                 "multidimensional cyclic monotonicity",
-                "convert IC to no-positive-cycle or convex indirect utility/subgradient allocation",
+                "under utility t dot x minus p, prove cyclic monotonicity or a convex potential/subgradient representation, with graph signs explicit",
                 "3-cycle type graph, allocation discontinuity, missing quasilinearity",
                 "NetworkX/Z3 graph cycle checks; CVXPy for payment feasibility",
             ),
@@ -635,13 +636,13 @@ PLAYBOOK_GUIDES = {
             (
                 "indirect utility and envelope formula",
                 "a type gains by a one-dimensional misreport",
-                "single-parameter types, quasilinear utility, monotone allocation, boundary IR",
+                "quasilinear interval types, monotone allocation, boundary utility, and a justified interim law for BIC",
                 "finite type IC/IR LP plus envelope derivative check",
             ),
             (
                 "deviation graph",
                 "a positive cycle of misreports",
-                "quasilinearity, finite or discretized type set, cyclic monotonicity",
+                "quasilinearity and all relevant deviation cycles; a finite grid alone does not certify a continuous type domain",
                 "NetworkX/Z3 cycle search or payment feasibility LP",
             ),
             (
@@ -688,7 +689,7 @@ PLAYBOOK_GUIDES = {
             (
                 "potential function",
                 "improvement cycles prevent convergence or equilibrium selection",
-                "exact/ordinal potential or increasing differences",
+                "improvement-compatible potential plus finite actions or a separate attainment/convergence argument",
                 "two-player two-action search and Wolfram payoff differences",
             ),
             (
@@ -769,7 +770,7 @@ PLAYBOOK_GUIDES = {
             ),
         ],
         "lemmas": [
-            "The confidence event is valid uniformly over time, actions, contexts, and adaptive histories.",
+            "The confidence event covers the random times and actions used under the stated filtration; probability is over histories, not uniformly over every realized history.",
             "Optimism converts the confidence event into an instantaneous regret bound.",
             "The summation lemma is explicit: pull-count, harmonic sum, elliptical potential, or Bregman telescope.",
             "The failure-event contribution is included with the right probability and horizon dependence.",
@@ -838,8 +839,8 @@ PLAYBOOK_GUIDES = {
             (
                 "testing-to-risk bridge",
                 "statistical testing lower bound does not imply target regret or risk",
-                "minimax/Bayes reduction, feasible estimator/algorithm class, loss transfer",
-                "write the binary testing reduction explicitly",
+                "a prior supported on admissible instances, all allowed randomized algorithms, and a valid testing-to-loss transfer",
+                "write the testing-to-loss reduction with the algorithm and instance quantifiers",
             ),
         ],
     },
@@ -847,7 +848,7 @@ PLAYBOOK_GUIDES = {
         "attacks": [
             (
                 "Lovasz Local Lemma route",
-                "define bad events, build a valid dependency graph, and check the symmetric or asymmetric LLL condition",
+                "for a finite bad-event family, prove independence from the joint nonneighbor sigma-field and check the symmetric or asymmetric LLL criterion",
                 "bad events too likely, hidden shared randomness, invalid dependency graph, constants fail",
                 "Python/NetworkX for dependency degree; SymPy/Wolfram for LLL inequalities",
             ),
@@ -859,7 +860,7 @@ PLAYBOOK_GUIDES = {
             ),
             (
                 "algorithmic LLL route",
-                "identify variables, bad events, and a Moser-Tardos resampling step that terminates under LLL hypotheses",
+                "specify an independent product space or valid resampling oracle, then prove termination and event-detection cost for the claimed algorithm",
                 "events not variable-determined, resampling changes unrelated constraints, nonconstructive proof claimed as algorithmic",
                 "small resampling simulations for sanity only; proof needs LLL hypotheses",
             ),
@@ -874,13 +875,13 @@ PLAYBOOK_GUIDES = {
             (
                 "bad-event family",
                 "some forbidden local configuration survives",
-                "random object, local obstruction definition, finite dependency neighborhood",
+                "explicit random space, finite bad-event family, and complete coverage of forbidden configurations",
                 "dependency graph count plus LLL inequality check",
             ),
             (
                 "dependency graph",
                 "union bound is too loose because there are too many events",
-                "limited overlap of random variables or justified lopsided dependence",
+                "joint nonneighbor independence from disjoint product-space variables, or the required lopsided conditional bound",
                 "NetworkX overlap enumeration and symbolic `e p (d+1)` check",
             ),
             (
@@ -910,14 +911,14 @@ GENERIC_ATTACKS = [
         "lemma isolation route",
         "split the theorem into the one missing lemma and prove/refute it separately",
         "quantifier mismatch, boundary failure, false strengthening",
-        "audit_ledger.py and proof_doctor.py",
+        "direct local proof, counterexample, or verified theorem premise; record the result in the ledger",
     ),
 ]
 
 GENERIC_LEMMAS = [
     "All variables, domains, quantifiers, and assumptions are explicit.",
-    "The negation and smallest nontrivial example have been tested.",
-    "Every nontrivial proof step is named as a lemma with status known/proved/tool-checked/missing/false.",
+    "Any boundary or falsification check used targets a stated suspect implication and retains its evidence scope.",
+    "Every required nontrivial implication is justified or explicitly open; only steps needing durable tracking require a separate lemma record.",
     "The final assembly proves exactly the claim, not a nearby easier theorem.",
 ]
 
@@ -1032,10 +1033,10 @@ def attack_matrix_text(title: str, claim: str, selected: list[tuple[str, int]]) 
 
 ## Branch Discipline
 
-- Run one proof route and one falsification route before drafting a final proof.
-- If a route fails, record the named obstruction in `LEDGER.md`; then switch routes instead of retrying the same prose argument.
-- If two routes fail or the same obstruction repeats, open `ESCALATION.md` and run the next external method before another prose proof.
-- If the claim changes, rerun `start_proof.py` or update `routing.json` and this matrix.
+- Start with one motivated proof route; use a boundary or falsification check when it tests a suspect step.
+- If a route fails, record the obstruction in `LEDGER.md`; repair locally when new evidence supports it, otherwise change the mechanism.
+- If two routes fail or the same obstruction repeats, use `ESCALATION.md` to choose a new representation, a targeted check or premise, an explicit theorem repair, or a precise open-gap report. External methods are optional and must answer the named gap.
+- If the claim changes, record a theorem revision and refresh the claim, routing, and affected evidence before resuming. Preserve prior attempts as history.
 """
 
 
@@ -1062,8 +1063,8 @@ Use AND nodes for required sublemmas and OR nodes for alternative routes, constr
 Status values:
 
 - missing: needed but not proved.
-- checked: verified by symbolic, numeric, finite, or formal tool.
-- proved: human proof written and reviewed.
+- checked: tool evidence exists at its recorded scope; a sampled or finite check does not discharge a universal claim.
+- proved: a mathematical proof is written and reviewed, with every required obligation discharged.
 - false-negated: counterexample or proof of negation found.
 - conditional: true only under named extra assumptions or weaker conclusion.
 
@@ -1111,7 +1112,7 @@ Fill this only before committing a new multi-lemma decomposition, especially aft
 - jointly sufficient premise bundle or retrieval plan:
 - reviewer verdict: admit / revise / reject
 
-Do not admit the split when the parent assembly or a required child's exact use site is missing, a child merely restates an ancestor, or one failure would force a wholesale rewrite. After a required child is proved, replay the conditional parent assembly and record whether it passed or failed.
+Do not admit a split with missing parent assembly, an unused required child, or a child that merely restates an ancestor. Consider how a failed child affects the route before investing in the split. After a required child is proved, replay the conditional parent assembly and record whether it passed or failed.
 
 ## Candidate Lemmas To Prove Or Refute
 
@@ -1179,7 +1180,7 @@ def pattern_scan_text(title: str, claim: str, selected: list[tuple[str, int]]) -
 
 ## When To Use
 
-Fill this only when the proof is unfamiliar, has failed twice, or needs outside theorem/proof-agent patterns.
+Fill this when a named missing premise, construction, or proof pattern warrants retrieval. Repeated failure alone does not require an external scan.
 Read `external-proof-pattern-scan.md` before broad literature or skill browsing.
 
 ## Autonomous Capability Check
@@ -1258,7 +1259,7 @@ def idea_map_text(title: str, claim: str, selected: list[tuple[str, int]]) -> st
 
 ## Use Rule
 
-If a direct theorem route already works, skip this file. If no central object appears after two idea engines, switch to counterexample search, retrieval, or theorem repair.
+If a direct theorem route works, skip this file. If a proposed object leaves the same obstruction unchanged, try a materially different representation or a targeted falsification/retrieval step; report the gap when no useful next move remains.
 """
 
 
@@ -1295,9 +1296,9 @@ For each tool-assisted step, fill one block:
 
 ## Artifact Rules
 
-- Counterexample: refutes or repairs the theorem.
-- Conditions: become assumptions or case splits.
-- Exact identity or `True`: becomes a named algebraic lemma under copied assumptions.
+- Counterexample: refutes only the statement whose assumptions and failed conclusion the witness satisfies; a failed helper or encoding need not refute the original theorem.
+- Conditions: prove them from the original assumptions, cover the remaining cases, or label the changed statement as theorem repair.
+- Exact identity or `True`: supports only the encoded statement under copied domains and assumptions; verify its interpretation before using it as a lemma.
 - Optimizer output: must be converted into KKT/dual/certificate logic before use.
 - Lean accepted lemma: local formalization only; explain how it connects to the full proof.
 - Lean/API formal artifact: audit for `sorry`, admitted axioms, incomplete declarations, unproved dependencies, and missing global assembly.
@@ -1320,13 +1321,13 @@ def strategy_text(selected: list[tuple[str, int]]) -> str:
 - draft proof: pending
 - sketch subgoals: pending
 - premise retrieval targets: selected playbooks, prior ledgers, paper lemmas, formalization projects, proof-agent workflows, mathlib/search if relevant
-- external pattern scan: fill `PATTERN_SCAN.md` if routes are unfamiliar or repeated attempts failed
+- external pattern scan: fill `PATTERN_SCAN.md` when a specific missing premise or proof pattern warrants retrieval
 - tool-guided repair targets: first false or unproved sublemma
 - compact repair rule: retry a failed node using only statement, dependencies, previous attempt signature, previous feedback, and suggested fix
 - graph-search rule: mark OR alternatives and AND required subgoals; work the bottleneck required child before expanding another route
-- decomposition-admission rule: require parent sufficiency, strict simplification, acyclicity, source fidelity, low repair radius, and premise feasibility
+- decomposition-admission rule: require parent sufficiency, simpler noncircular children, source fidelity, and feasible premises; assess which dependents would need repair
 - failure-stage rule: distinguish strategy-discovery / decomposition / premise-retrieval / local-proof / assembly / fidelity / library-coverage before spending another attempt
-- discovery handoff rule: treat model memory as unverified; first record Scholar-backed queries, verified source anchors, closest results, active-work signals, and the exact frontier gap; then define the candidate search and freeze one promoted candidate before proof
+- discovery handoff rule: for an unknown-answer research question or a novelty claim, record source-backed queries, verified anchors, closest results, and the frontier gap before broad discovery; a missing proof object in a fixed theorem does not require a novelty audit
 - premise-bundle rule: for multi-step routes, retrieve a jointly sufficient theorem set through sketch-retrieve-reflect rather than independent similarity search
 - state/action dedupe rule: same goal, assumptions, central object, and failure witness means the same proof state unless there is a real new artifact
 - step-challenge rule: tag fragile steps by verification level, run goal and logic gates, then accept/challenge/trace-back/re-decompose/re-plan/stop
@@ -1335,8 +1336,8 @@ def strategy_text(selected: list[tuple[str, int]]) -> str:
 - route decision rule: after two local failures, choose continue / repair / re-decompose / retrieve / tool-falsify / stop-report before another attempt
 - used-node rule: prove ready leaves on the current assembly path before side lemmas
 - lemma revision rule: preserve proved helper lemmas and revise only unproved or false nodes plus dependents
-- gap review: good gaps may be deferred as lemmas; bad gaps must be split, retrieved, falsified, or repaired
-- formal artifact rule: Lean/API output is not final if the theorem still has `sorry`, admitted axioms, or an unencoded assembly obligation
+- gap review: a smaller gap may be isolated as a lemma but remains open until proved; a theorem-strength gap calls for a different mechanism or an explicit unresolved status
+- formal artifact rule: Lean/API output is not final with `sorry`, unjustified additional axioms, or an unencoded assembly obligation; report the axiom footprint
 - progress budget: stop or switch after two unchanged obstruction cycles
 
 ## Route A
@@ -1359,8 +1360,7 @@ def strategy_text(selected: list[tuple[str, int]]) -> str:
 
 ## Switch Rule
 
-If Route A hits a named obstruction in `obstruction-taxonomy.md`, update `LEDGER.md`, then switch to Route B or re-run playbook selection with the obstruction text.
-If two routes fail or the obstruction does not shrink, follow `ESCALATION.md`: tool falsification, retrieval, local formalization, theorem repair, or stop/report.
+If Route A hits a named obstruction, record it in `LEDGER.md`. Repair locally only when new evidence supports the repair; otherwise change the mechanism or use a targeted check, retrieval, explicit theorem repair, or open-gap report from `ESCALATION.md`. Route B is an option, not a required next step.
 """
 
 
@@ -1386,16 +1386,16 @@ def triage_text(title: str, claim: str, selected: list[tuple[str, int]], mode: s
 
 1. Fill exact variables, domains, quantifiers, and assumptions in `claim.md`.
 2. Run the direct-solve and statement-fidelity checks. Mark any changed assumption, quantifier, domain, or conclusion as theorem repair.
-3. Write the negation and smallest toy, boundary, and relaxed-assumption cases in `counterexamples.md`.
-4. Use `ATTACK_MATRIX.md` to compare one proof route, one falsification route, and one orthogonal evidence route.
-5. Open `IDEA_MAP.md` only if the central object, construction, proof kernel, or unknown answer is missing. In discovery mode, complete its external frontier scan and Novel Problem Discovery contract before broad search.
-6. Build the active AND/OR lemma graph in `LEMMA_QUEUE.md`; work the least-certain required child on the assembly path.
+3. Use `counterexamples.md` for a small or boundary case that tests a suspect implication; distinguish the original claim from any relaxed variant.
+4. Start with one motivated route in `ATTACK_MATRIX.md`; compare alternatives only when a named obstruction warrants them.
+5. Open `IDEA_MAP.md` when the needed object or kernel is missing. Use its frontier scan only for an unknown-answer research question or novelty claim, not merely a missing helper inside a fixed theorem.
+6. Use `LEMMA_QUEUE.md` when several dependent obligations need tracking; work the weakest required child on the current assembly path.
 7. Use `WORKSTREAMS.md`, `PATTERN_SCAN.md`, `TOOL_PLAN.md`, or the prover-verifier contract only when repetition, retrieval, tools, or fragile local checking activates them.
 8. Run `proof_doctor.py .` after a failure or state change, and `audit_ledger.py LEDGER.md` before claiming a final proof.
 
 ## Do Not
 
-- Do not present a polished proof before the verification gates are filled.
+- Do not claim a complete proof while a required mathematical obligation remains open. Template completion is not proof evidence.
 - Do not restart from scratch after a failed route; name the obstruction and update `LEDGER.md`.
 """
 
@@ -1429,15 +1429,17 @@ def escalation_text(title: str, claim: str, selected: list[tuple[str, int]]) -> 
 
 ## Trigger
 
-Use this file after two failed routes, one repeated obstruction, or a failed tool/toy-model check.
+Use this file to choose the next move after materially different routes fail, an obstruction repeats unchanged, or a local check exposes a gap.
 
 ## Ladder
+
+These are alternatives, not a required sequence. Choose the move that can resolve the named gap.
 
 1. Local reroute: name obstruction, shrink to the missing lemma, make a route decision, then switch theorem family if needed.
 2. Tool falsification: write negation; search finite/boundary examples; use Wolfram, Python, Z3, CVXPy, Sage, or OR-Tools.
 3. Retrieval: search playbooks, prior ledgers, local paper text, theorem names, and formal libraries; use web literature only when needed or requested.
 4. Local formalization: formalize the fragile local lemma in Lean/mathlib or write a pseudo-formal lemma card.
-5. Theorem repair: mark the original claim refuted/conditional, then add the weakest assumption or weaken the conclusion.
+5. Theorem repair: state the changed assumption or conclusion explicitly; retain the original claim as open unless a valid original-claim counterexample refutes it.
 6. Stop/report: return still-open status with exact obstruction and next bounded move.
 
 ## Domain Hints

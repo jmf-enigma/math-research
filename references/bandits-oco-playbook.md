@@ -1,44 +1,22 @@
-# Bandits And Online Learning Playbook
+# Bandits and online learning
 
-Use for stochastic/adversarial bandits, contextual/linear bandits, online convex optimization, Hedge/EXP3, FTRL/OMD, and regret proofs.
+Use for regret proofs. Fix the comparator, expected versus high-probability guarantee, and pseudo-regret versus realized regret. State the filtration: which quantities are chosen before the action draw and which noise terms have conditional mean zero. If losses may depend on the current action draw, the usual importance-weighted unbiasedness argument can fail.
 
-## Branch Split
+## Choose the controlling inequality
 
-- Stochastic finite-arm UCB: confidence event, optimism, pull-count bound, failure event.
-- Gap-free regret: split small-gap and large-gap arms; optimize threshold.
-- Thompson sampling: posterior concentration or information ratio.
-- Linear/contextual bandit: ridge estimator, confidence ellipsoid, optimism, elliptical potential.
-- Adversarial bandit: unbiased loss estimator, exponential weights potential, variance control.
-- OCO: OGD/FTRL/OMD one-step inequality and telescoping Bregman divergence.
+| Setting | Kernel to prove | What closes the bound |
+| --- | --- | --- |
+| Stochastic finite-arm UCB | On a simultaneous confidence event, a suboptimal pull forces its gap below its confidence width | Pull-count bound plus the failure-event contribution; handle zero gaps separately |
+| Gap-free stochastic regret | Split pulls by whether their gaps exceed a threshold | Bound small-gap loss directly, large-gap loss by counts, then optimize the threshold |
+| Thompson sampling | A justified posterior concentration or information-ratio inequality | Match the Bayesian or frequentist quantifiers of the requested regret |
+| Linear/contextual bandit | Conditional noise concentration yields a valid ridge confidence ellipsoid; optimism bounds regret by a feature norm | Elliptical potential controls the sum of norms; retain regularization bias and feature/noise assumptions |
+| Adversarial bandit | Importance-weighted estimates are conditionally unbiased and satisfy the chosen potential inequality | Control the variance term using actual sampling probabilities, including exploration |
+| OGD/FTRL/OMD | One-step regret is bounded by potential decrease plus a stability/error term | Telescope with the stated regularizer, norm, feasible set, and learning-rate schedule |
 
-## Smart Routes
+A confidence statement must cover the random times and actions actually used. A fixed-time or fixed-action bound cannot be substituted without a uniformity argument. For realized regret, bound the additional noise term separately.
 
-- Regret decomposition unclear: write instantaneous regret under good event first.
-- Missing uniformity: make confidence event uniform over arms/time/actions.
-- Linear bandit stuck: isolate self-normalized concentration and elliptical potential as separate lemmas.
-- EXP3 variance explodes: track importance-weighted estimator and exploration probability.
-- OCO proof stuck: choose regularizer that makes telescoping clean.
-- Unknown horizon: doubling trick or time-varying learning rate.
+## Diagnose the loss
 
-## Common Lemmas
+When a rate loses a logarithm or dimension factor, locate it in concentration, instantaneous regret, or summation before changing the algorithm. A varying learning rate adds terms when telescoping; a doubling argument must include restart costs. Tiny sampling probabilities require explicit second-moment control, not a simulation of benign trajectories.
 
-- Hoeffding/Bernstein/Freedman confidence event.
-- Peeling/union bound over time.
-- Self-normalized martingale inequality.
-- Elliptical potential lemma.
-- Hedge log-potential bound.
-- OGD/FTRL/OMD regret lemma.
-
-## Counterexample Tests
-
-- One optimal and one near-optimal arm.
-- Zero gap vs positive gap.
-- Adaptive context sequence.
-- Loss estimates with tiny action probability.
-- Comparator outside feasible set.
-
-## Tool Hooks
-
-- Python for small simulations and summation checks.
-- Wolfram/SymPy for rate optimization and algebra.
-- Lean for telescoping/elementary inequalities when local.
+Useful stress cases are two nearly tied arms, adaptive contexts, vanishing sampling probabilities, and a comparator at the feasible boundary. Exact summation and parameter optimization can check the rate; they do not establish concentration.

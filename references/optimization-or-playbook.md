@@ -1,47 +1,23 @@
-# Optimization And OR/MS Playbook
+# Optimization and OR/MS
 
-Use for KKT, LP/convex duality, exchange arguments, queueing/control-style structural results, and algorithm optimality. For Bellman equations, MDPs, threshold policies, indexability, or average-cost DP, also read [dp-proof-playbook.md](dp-proof-playbook.md).
+Use for optimality certificates, algorithm guarantees, and structural optimization claims. Bellman and control arguments belong in [dp-proof-playbook.md](dp-proof-playbook.md).
 
-## Branch Split
+## Choose a certificate with the right scope
 
-- Convex program: prove convexity/closedness, Slater or LP feasibility, derive dual, certify by KKT.
-- Nonconvex program: avoid KKT sufficiency; search for convexification, monotonicity, exchange, or global certificate.
-- LP/integer program: inspect primal/dual, complementary slackness, total unimodularity, relaxation gap, rounding.
-- Dynamic program: use [dp-proof-playbook.md](dp-proof-playbook.md) for Bellman recursion, monotonicity/convexity/contraction, and policy verification.
-- Structural policy: try threshold, monotone policy, indexability, submodularity, coupling, or interchange argument.
-- Algorithm proof: prove invariant, approximation ratio, primal-dual certificate, potential decrease, or exchange optimality.
-- Fixed first-order/operator algorithm rate: if the method, class, normalization, and metric are PEP-encodable, use [peppy-proof-bridge.md](peppy-proof-bridge.md) to discover and certify a rate or Lyapunov function.
+| Problem | Kernel | Missing premise to check |
+| --- | --- | --- |
+| Convex program | Feasible KKT point or matching primal/dual values | Convexity makes KKT sufficient; deriving multipliers or strong duality needs its own constraint-qualification or duality argument |
+| Nonconvex program | Global bound, exact convexification, or exchange argument | Stationarity and local second-order conditions do not certify global optimality |
+| LP/integer program | Dual bound, integrality, or rounding | Primal/dual feasibility and attainment as used; total unimodularity also needs integral data in the appropriate form |
+| Greedy or structural policy | Exchange preserving feasibility and improving the objective | Every proposed exchange is legal, and repeated exchanges reach the claimed canonical form |
+| Approximation algorithm | Compare to a specified feasible benchmark | Charging, potential, or dual bound accounts for every cost and resource |
+| Value/comparative statics | Envelope or monotone-argmax theorem | Attainment, regularity, ordering, and feasible-set dependence match that theorem |
+| Fixed first-order algorithm | Interpolation inequalities and dual/energy certificate | Method, function class, normalization, horizon, and performance metric match the encoded problem |
 
-## Smart Routes
+For the final row, [peppy-proof-bridge.md](peppy-proof-bridge.md) separates numerical performance estimates, checked certificates, and all-horizon Lyapunov proofs. A finite-horizon pattern is a conjecture about the general formula.
 
-- Boundary-heavy FOC: replace with KKT/subgradient; split active constraints.
-- Hard global optimality: construct a dual certificate or exchange argument.
-- Monotone optimal policy: prove increasing differences or submodularity of value differences.
-- DP convergence: use contraction if discounted; use monotone value iteration or span seminorm if average-cost.
-- Approximation: choose benchmark first, then prove algorithm reaches fraction/additive gap.
-- Unknown convergence rate: use Peppy Block 1 to conjecture the formula, Block 2 for certificate structure, and Blocks 3-5 only when an all-horizon readable Lyapunov proof is needed.
+## Simplify the bottleneck
 
-## Common Lemmas
+Replace boundary-heavy first-order calculations by a subgradient/KKT certificate when justified. Seek a dual bound before solving for every optimizer. Derive an exchange or potential from the exact residual, and verify it uniformly rather than fitting coefficients on sampled instances.
 
-- KKT sufficiency under convexity.
-- Weak/strong duality and complementary slackness.
-- Bellman optimality and policy improvement.
-- Envelope theorem for value functions.
-- Topkis monotonicity for argmax correspondence.
-- Exchange argument for greedy structure.
-
-## Counterexample Tests
-
-- One constraint active at boundary.
-- Two-item/two-period instance.
-- Nonunique optimizer/tie-breaking.
-- Nonconvex objective with local optimum.
-- Relaxed LP fractional solution.
-
-## Tool Hooks
-
-- CVXPy for primal/dual sanity check.
-- OR-Tools for small integer/assignment/scheduling instances.
-- Wolfram/SymPy for FOC, Hessian, envelope, algebraic inequalities.
-- Z3 for finite policy/threshold counterexamples.
-- Peppy/PEPFlow for conditional fixed-algorithm performance estimation, dual certificates, and Lyapunov construction.
+Stress candidate arguments at active constraints, ties, fractional relaxation optima, and nonconvex local optima. Solver outputs can suggest active sets and dual support; the mathematical certificate must establish feasibility, the bound, and equality or the claimed gap.

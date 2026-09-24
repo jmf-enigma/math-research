@@ -1,40 +1,22 @@
 # Bounded Expert Consultation
 
-Use a stronger or independent model to propose a missing mathematical move, not to certify a proof.
+Use an independent model for one missing mathematical move. Its answer is a search result, not proof authority.
 
 ## Admission Gate
 
-Consult only when the proof owner can name the tuple
+Name `(exact claim, assumptions, local subgoal, failed implication, failure witness)`. Consult when a serious route reaches a nonroutine idea-level kernel that retrieval, CAS, finite search, optimization, or Lean does not directly decide; two materially different routes share that obstruction; or a cold referee isolates one hard step while the mechanism survives.
 
-`(exact claim, assumptions, local subgoal, failed implication, failure witness)`
-
-and at least one of these holds:
-
-- one serious route reaches a nonroutine idea-level kernel that retrieval, CAS, finite search, optimization, or Lean does not directly decide;
-- two materially different routes reach the same local obstruction;
-- a cold referee attacks one hard local step and the central mechanism otherwise survives.
-
-Do not consult during initial reading, for routine algebra, for a finite leaf with a suitable solver, or to approve a complete proof. Do not send unpublished text, private data, or attachments through a browser bridge without the user's approval.
+Routine algebra, solver-ready finite leaves, initial brainstorming, and approval of a complete proof do not need consultation.
 
 ## Compact Packet
 
-Send only what changes the local decision:
+Send the exact local goal and domains, available assumptions, checked prefix, failed implication and witness, and one requested artifact with its acceptance test. Choose one role:
 
-1. Exact claim and domains.
-2. Current local subgoal.
-3. Assumptions available at that subgoal.
-4. Verified prefix or already checked lemmas.
-5. Failed route and its exact failure witness.
-6. One requested artifact: a new mechanism or construction, a replacement for the failed step, or a decisive refutation.
-7. Acceptance test and cheapest falsifier.
+- `route`: a materially new mechanism or construction;
+- `surgery`: replace the failed implication while preserving the route;
+- `critic`: refute the kernel or identify its first missing assumption.
 
-Ask for one role only:
-
-- `route`: give one materially new mechanism or construction;
-- `surgery`: replace the first failed implication while preserving the route;
-- `critic`: refute the proposed kernel or identify its first missing assumption.
-
-Require this response shape:
+Require:
 
 ```text
 STATUS: candidate | refutation | no-progress
@@ -46,16 +28,14 @@ DECISIVE CHECK OR FALSIFIER:
 UNRESOLVED GAP:
 ```
 
-The consultant must expose the hard step rather than rename the original theorem as a lemma. A useful response has one executable check or a derivation the proof owner can reproduce without trusting the consultant.
+Reject a renamed theorem-strength lemma. A useful answer exposes a derivation the owner can reconstruct or a decisive check it can run.
 
 ## Provider And Budget
 
-If the user explicitly opts in for the current task and an approved Rosetta `consult` MCP tool is available, use its Pro mode with `fresh: true`, no `recall`, and no attachments by default. Rosetta is an optional unofficial browser bridge, not part of this skill and not an official verification channel. Review the provider's current terms before enabling it. If it is unavailable, disclosure is not approved, or the user prefers an official route, use one fresh native subagent or stop with the prepared packet.
+Use a fresh native subagent when available. Optional Rosetta `consult` is an unofficial browser bridge, not part of this skill or a verification channel. Use it only when current tool access and provider terms permit it and the user has authorized that route; existing authorization counts. In Pro mode use `fresh: true`, no `recall`, and no attachments by default. Unpublished text, private data, or attachments require authorization covering that disclosure. Otherwise use the native route or retain the packet as the next action.
 
-Make one call per unchanged proof-state tuple. Permit one follow-up only when the first answer contributes a new checkable kernel and the follow-up asks one precise clarification or falsification question. The hard cap is two calls. A timeout, generic brainstorm, cosmetic rewrite, or answer without a decisive check counts as no progress; retire it rather than retrying. On any rate limit, account restriction, authentication anomaly, or protective challenge, stop immediately and do not retry or work around it.
+Make one call per unchanged proof-state tuple. Allow one follow-up only if the first answer supplies a new checkable kernel and one precise clarification or falsification question remains. The hard cap is two calls. A timeout, generic brainstorm, or cosmetic rewrite is no progress, not grounds to resend. On a rate limit, account restriction, authentication anomaly, or protective challenge, stop immediately and do not retry or work around it.
 
 ## Intake Gate
 
-Record the provider, model as reported by the tool, proof-state tuple, response, and disposition when working in durable project mode. Mark the response `proof_effect=none`.
-
-Run the proposed falsifier first. If it survives, independently reconstruct the derivation and check every imported assumption. Promote only the exact portion that is replayed by mathematics, a source, CAS/SMT, Lean, or a cold referee. Never cite the consultation itself as proof authority.
+In durable mode record provider, reported model, tuple, response, and disposition with `proof_effect=none`. Run the proposed falsifier first when available; then independently reconstruct the surviving derivation and imported assumptions. Only the checked portion may enter the proof, at its actual scope. A cold referee can challenge it but cannot replace missing mathematical evidence. Never cite the consultation itself as proof authority.

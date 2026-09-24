@@ -17,14 +17,7 @@ Maintenance reference; do not load during an ordinary proof. This is a targeted 
 
 ## From discovery to an actual proof
 
-The synthesis below is our adaptation, not a claim that every cited system implements it.
-
-1. Freeze the requested theorem and identify the controlling obstruction. For a source problem, read its definitions and surrounding argument before interpreting an extracted question.
-2. Attempt one complete route. When the object is missing, use a tight case, failed construction, exact residual, or source proof to propose one local mechanism.
-3. Attach a decisive check. If a change of variables, quotient, lifting, encoding, or recursive construction is involved, state its map and the implication back to the target.
-4. Check the fragile leaf with the narrowest available method. A solver output, retrieved premise, and model suggestion have different evidentiary roles.
-5. Preserve checked components and the exact next action. A budget ending or a missing artifact does not disprove the route.
-6. Assemble the original theorem and inspect the full candidate. Report outcome, evidence basis, and scope separately. Novelty requires its own source comparison only when a research contribution is being claimed.
+The runtime synthesis is maintained in [SKILL.md](../SKILL.md); representation and failed-closure obligations live in [representation-witness.md](representation-witness.md). These are adaptations of the mechanisms above, not claims that each source implements the same workflow.
 
 ## Concrete implementation and verification
 

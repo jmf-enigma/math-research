@@ -1,135 +1,43 @@
-# Dynamic Programming Proof Playbook
+# Dynamic programming proofs
 
-Use for Bellman equations, MDPs, finite/infinite horizon DP, average-cost DP, threshold policies, monotone policies, indexability, inventory/queueing/control models, and dynamic mechanism/control problems. The goal is to turn a hard DP into a small set of Bellman, structural, and verification lemmas.
+Use for Bellman equations, value structure, policy verification, thresholds, indexability, and average-cost control. Fix state, admissible actions, transition law, reward/cost convention, horizon or discount, and the class of comparison policies. State terminal/boundary conditions and how ties affect the policy claim.
 
-## Map
+## Choose the object that implies the target
 
-- Intake and branch split: identify the DP object and horizon/criterion.
-- Smart routes and common lemmas: choose Bellman, monotonicity, threshold, or certificate proof.
-- Counterexample tests and tool hooks: stress boundary/tie cases before final proof.
-- Templates and failure diagnosis: use the smallest certificate that proves the policy/value claim.
+| Target | Kernel | Required closure |
+| --- | --- | --- |
+| Finite-horizon value or policy structure | Backward induction on a function class | Terminal value belongs to the class; the Bellman operator preserves it; action comparisons imply the policy claim |
+| Discounted fixed point | Contraction on a specified complete function space | Bellman operator maps that space into itself; admissible maximizing selections exist when claiming a policy |
+| Monotone/threshold policy | Order or single crossing of action-value differences | Prove the property after expectation and continuation; account for state-dependent feasible actions and ties |
+| Convex/concave/submodular value | Bellman operator preserves the claimed property | Verify expectation, composition, and optimization each preserve it; maximization need not preserve concavity |
+| Average-cost optimality | Gain/bias inequality and equality under the candidate | Integrability and a terminal-bias bound justify passage from finite horizons to the specified average-reward criterion |
+| Indexability | Passive optimal-action sets ordered by subsidy | Prove nesting over the full subsidy range, with endpoint limits and a consistent tie convention |
+| Constrained control | Lagrangian bound attained by a feasible policy | Complementary slackness and feasibility close the primal bound; randomization may be needed |
+| Belief-state control | A sufficient posterior state and a valid filter | Histories induce the stated belief transitions and admissible policies transport between representations |
 
-## Intake
+Do not solve the entire value function if the claim needs only an action comparison or Bellman bound. Order preservation in the function argument does not by itself prove monotonicity in the state. For Topkis, identify the lattice/order, increasing differences, and feasible-set conditions of the exact theorem used; monotone rewards alone are insufficient.
 
-Write these before proving:
+## Bounded discounted certificate
 
-- State `s`, action `a`, shock `w`, transition `s' = f(s,a,w)`, reward/cost `r(s,a)`, discount or horizon.
-- Feasible action set `A(s)` and how it changes with `s`.
-- Value object: `V_t`, discounted `V`, average-cost bias `h`, Q-function `Q`, or post-decision value.
-- Target: existence, Bellman equation, convergence, threshold/index/monotone policy, convexity/concavity, comparative statics, or optimality of a candidate policy.
-- Boundary and tie rules: terminal state, absorbing state, capacity, zero inventory/queue, action ties, finite horizon endpoints.
-
-## Branch Split
-
-- Finite horizon: backward induction; prove the structural property is preserved from `V_{t+1}` to `V_t`.
-- Discounted infinite horizon: define Bellman operator `T`; prove contraction or monotone bounded iteration; then prove fixed point and policy verification.
-- Average cost: use ACOE/optimality inequality with gain `g` and bias `h`; for finite states use relative value/LP; for unbounded states use drift or Lyapunov bounds.
-- Threshold or monotone policy: compare action differences `Delta(s)=Q(s,a_high)-Q(s,a_low)` and prove single crossing.
-- Convex/concave value: prove `T` preserves convexity/concavity; use Jensen, monotone transitions, or post-decision state.
-- Index policy: introduce subsidy/passive reward; prove passive set expands monotonically in subsidy.
-- Constrained DP: use Lagrangian relaxation, prove policy optimality for multiplier, then recover feasibility/complementary slackness.
-- Partially observed or belief-state DP: move to belief state, prove value structure on simplex, then verify filter update assumptions.
-
-## Smart Routes
-
-- Do not solve for `V` unless needed. Prove Bellman inequalities or compare Q-values.
-- For a candidate policy `pi`, verify `Q(s,pi(s)) >= Q(s,a)` for all `a`; this is often easier than deriving `V`.
-- For thresholds, prove `Delta(s)` is monotone and check one crossing plus boundary signs.
-- For monotone optimal policies, use Topkis: lattice state/action spaces, increasing differences, and monotone feasible sets.
-- For value monotonicity, prove the Bellman operator is order preserving and start value iteration from an ordered function.
-- For convexity/submodularity, prove the operator preserves the property; avoid differentiating an unknown value function unless justified.
-- For hard global optimality, build a Bellman certificate: `V(s) >= r(s,a)+beta E[V(s')]` for all `a`, with equality for the proposed policy.
-- For average-cost proofs, separate recurrence/stability from optimality; ACOE alone may not imply optimality without transversality or boundedness.
-
-## Common Lemmas
-
-- Bellman operator maps the chosen function class into itself.
-- Discounted Bellman operator is a contraction in sup norm.
-- Finite-horizon induction preserves monotonicity/convexity/submodularity.
-- Q-value difference has single crossing.
-- Topkis monotonicity gives monotone argmax correspondence.
-- Candidate value/policy satisfies Bellman equality on-policy and inequality off-policy.
-- Boundary states and action ties preserve the claimed structure.
-- Average-cost gain/bias pair satisfies the ACOE and required transversality/stability condition.
-
-## Counterexample Tests
-
-- Two states, two actions, two periods.
-- Boundary state: empty/full inventory, zero queue, capacity limit, absorbing state.
-- Discount extremes: `beta = 0`, `beta` near 1.
-- Tie-breaking and nonunique argmax.
-- Nonmonotone transition kernel or action-dependent feasible set.
-- Finite horizon versus stationary infinite-horizon policy.
-- Average-cost chain with transient or unstable policy.
-
-## Tool Hooks
-
-- Python: enumerate finite-state DP, value iteration, policy iteration, random parameter search, boundary grids.
-- Z3/OR-Tools: finite-state counterexamples to threshold/monotone policies.
-- CVXPy: finite MDP LP, occupation measures, dual Bellman certificates.
-- Wolfram/SymPy: simplify Q-value differences, derivatives, boundary signs, contraction constants, and threshold inequalities. For concrete templates, use `math-tools` reference `dp-wolfram-patterns.md`.
-- NetworkX: recurrent classes and reachability in finite Markov chains.
-- Lean: small order/inequality lemmas after the DP statement is stable.
-
-## Templates
-
-Bellman certificate for bounded discounted maximization:
-
-Assume a well-defined MDP with bounded measurable reward `r` and discount `0 <= beta < 1`. Let `V` be bounded and measurable, and let `pi` be an admissible measurable stationary policy, with `pi(s) in A(s)` for every state.
+For reward maximization in a well-defined MDP, suppose `0 <= beta < 1`, rewards and `V` are bounded measurable, and `pi` is an admissible measurable stationary policy. Verify at every state:
 
 ```text
-Verify for every state s:
-V(s) = r(s,pi(s)) + beta E[V(s' | s,pi(s))]
-V(s) >= r(s,a) + beta E[V(s' | s,a)] for all a in A(s).
-Then pi is optimal for expected total discounted reward among admissible policies.
+V(s) >= r(s,a) + beta E[V(S') | s,a]  for every a in A(s),
+V(s)  = r(s,pi(s)) + beta E[V(S') | s,pi(s)].
 ```
 
-The proof iterates these relations over a finite horizon and then uses `beta^T E[V(S_T)] -> 0`, which boundedness guarantees for every admissible policy. For unbounded rewards or `V`, separately establish integrability of the conditional expectations and finite-horizon identities, justify passage to the infinite return under the stated reward criterion, and prove the needed tail/transversality conditions for the candidate and comparison policies. Vanishing `beta^T E_s^sigma[V(S_T)]` for every compared policy `sigma` is a sufficient tail condition for this argument; any weaker one-sided condition needs its own verification argument. The displayed Bellman relations alone do not justify the unbounded extension.
+Iterate along any admissible policy for a finite horizon. Boundedness gives `beta^T E[V(S_T)] -> 0`, proving an upper bound on every policy's discounted reward and equality for `pi`.
 
-Threshold proof:
+For unbounded rewards or `V`, prove integrability of the finite-horizon identities, justify convergence to the specified return, and control the terminal term for both candidate and comparison policies. Vanishing discounted terminal value for every compared policy is sufficient for this argument; a weaker one-sided condition needs a corresponding verification proof.
 
-```text
-Define Delta(s) = Q(s,1)-Q(s,0).
-Prove Delta is increasing or decreasing in s.
-Check boundary signs.
-Conclude the argmax switches at most once.
-Handle ties by the stated tie-breaking rule.
-```
+For average reward, replace `V` by bias `h` and discounting by
+`g + h(s) >= r(s,a) + E[h(S') | s,a]`, with equality on-policy. The relevant terminal term is `E[h(S_T)]/T`. Recurrence alone does not establish its required bound.
 
-Finite-horizon structural induction:
+## Structural proof failures
 
-```text
-Base: terminal value V_T has property P.
-Step: assume V_{t+1} has P.
-Show T_t preserves P, so V_t = T_t V_{t+1} has P.
-Then derive policy structure from Q_t differences.
-```
+- A binary-action threshold needs single crossing of `Delta(s)=Q(s,1)-Q(s,0)` and boundary signs for any claimed interior crossing. With more actions, adjacent comparisons must assemble into the claimed ordering.
+- A finite-horizon threshold may depend on time; it does not establish a stationary threshold or indexability.
+- If contraction fails, first identify the lost hypothesis. Weighted norms, monotone convergence, and span seminorms each need their own assumptions.
+- Test disputed closure on two states, two actions, and two periods; include boundaries, action ties, and nonmonotone transitions. Finite enumeration can refute a universal claim but cannot certify its continuous-state extension.
 
-Average-cost verification:
-
-```text
-Find gain g, bias h, and policy pi.
-Show g + h(s) >= r(s,a) + E[h(s') | s,a] for all a.
-Show equality for a = pi(s).
-Check recurrence/stability/transversality.
-Then pi is average-cost optimal.
-```
-
-Indexability route:
-
-```text
-Add subsidy lambda for passive action.
-For each lambda, characterize passive set P(lambda).
-Prove P(lambda) expands monotonically in lambda.
-Solve indifference equation for the index.
-Verify boundary states and unreachable/tie states.
-```
-
-## Failure Diagnosis
-
-- If monotonicity fails, check transition stochastic monotonicity and increasing differences.
-- If threshold proof fails, inspect whether Q-difference is nonmonotone or has multiple crossings.
-- If contraction fails, check discounting, weighted norms, or monotone bounded convergence.
-- If FOC proof ignores corners, switch to Bellman inequalities or KKT-style active-action cases.
-- If average-cost proof is stuck, first prove stability/recurrence under the candidate policy.
-- If continuous state proof is messy, discretize for counterexamples before proving the continuous theorem.
+For finite MDPs, occupation-measure LPs can expose Bellman certificates; reachability and recurrent-class calculations can expose missing policy conditions.

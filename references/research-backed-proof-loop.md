@@ -44,65 +44,15 @@ Judge every new proof paper before changing the runtime. Record six items:
 
 Use one verdict: `import` when the mechanism is directly available and well supported; `adapt` when only a conservative control transfers; `monitor` when evidence is promising but not actionable; `reject` when the gain is inseparable from unavailable training, private implementation, weak evaluation, or unbounded compute. A paper name in a prompt is never a capability.
 
-| Source | Stage and evidence judgment | Verdict and retained change |
-| --- | --- | --- |
-| Rethlas | Runtime stage choice; public code and case traces, but natural verification still left gaps | `adapt`: obstruction-conditioned examples, retrieval, reformulation, decomposition, and compact memory |
-| Aletheia plus generative-verifier studies | Bounded natural proof search and judge calibration; benchmark evidence with known prompt and same-family limits | `import`: fresh referee, abstention, first error, one repair, and no vote-based promotion |
-| QED | Plan stability and proof-effort allocation; five expert-reviewed projects but only two diagnostic ablation cases and high cost | `adapt`: optional stable plan, key original step, exact retry level, and citation grounding |
-| Sum-product agent | Idea planning and construction; seven successful trials on one disclosed true target, high reasoning use, no matched-budget ablation | `adapt`: deep plan before construction, not a default three-call ritual or success-rate claim |
-| Beyond the Frontier | PRM-guided benchmark search; controlled backtracking comparisons but different models, state granularity, and hardware | `adapt`: preserve a tiny route-level untried pool; `reject` claims of PB-SMC or token-prefix search |
-| EvE, PatternBoost, AlphaEvolve, and MLEvolve | Candidate discovery under model or executable evaluators | `import` only when a replayable problem-specific evaluator exists; `reject` model preference as proof evidence |
-| Formal-prover RL and search papers | Training or Lean proof-state search | `monitor` for future model/runtime integration; use current formal tools only through explicit local verification |
-
 ## Runtime Controls
 
-1. **Preserve the theorem.** Freeze variables, domains, assumptions, quantifiers, probability mode, and conclusion. Any change is theorem repair.
-2. **Find one mechanism.** Ask why the claim may be true, what object controls it, and what first nonroutine implication must hold. Use a smallest informative case or negation only when it clarifies that mechanism.
-3. **Finish before branching.** Try one paper-order route end to end. For a genuinely hard route, stabilize a precise three-to-seven-step plan, identify its key original step, and state the conditional assembly before drafting. An auxiliary object is admitted only if motivated, consumed later, and strictly simplifying.
-4. **Escalate the first obstruction.** Do not search, formalize, compute, or parallelize in anticipation. Name the missing artifact first.
-5. **Search adaptively.** Following Rethlas, broad statement search, theorem reformulation, focused search, direct proof, and recursive proof are options rather than a fixed order. In the executable loop, retrieval is enabled for one turn only after the generator explicitly requests it. Inspect source context, definitions, assumptions, and proof technique, then make an independent derivation or falsification move.
-6. **Repair once.** Following APOLLO and compact-feedback systems, preserve a coherent skeleton and repair the earliest local error only when the central mechanism survives. The controller, not the model's renamed route label, owns the repair budget. A rejected repair retires the original route.
-7. **Use a cold whole-proof referee.** Give it the exact claim, candidate, selected premises, and necessary evidence. Require a concrete first error. Natural-language approval is `referee-accepted`; human review and formal verification are recorded separately.
-8. **Keep failure memory compact.** Store the frozen subgoal, route family, central object, first error or witness, and the new ingredient required for a legal retry. A notation change is not a new route.
-9. **Stop on state, not prose.** Stop or change representation after the same obstruction recurs without a new premise, certificate, witness, or smaller subgoal. Preserve checked prefixes and solved nodes, but do not polish a broken mechanism.
-
-This is the lightweight synthesis of Rethlas-style adaptive skill choice, APOLLO-style local repair, Aletheia-style bounded generator-verifier-reviser control, generative-verifier limitations, and the AI co-mathematician's durable uncertainty and user steering. It deliberately omits their heavyweight choreography from ordinary proof solving.
+Runtime instructions have one home: [SKILL.md](../SKILL.md) owns the proof loop; [proof-idea-generator.md](proof-idea-generator.md) owns object discovery; [prover-verifier-loop.md](prover-verifier-loop.md) owns review; [runtime-recovery.md](runtime-recovery.md) owns execution and resume behavior. The source map below explains why those controls were retained.
 
 ## Conditional Modules
 
-### Hard Exploration And Plan Stability
+Activate a module for its mathematical return, not because a cited system uses it. Use [retrieval](external-proof-pattern-scan.md) for an applicable premise, [construction search](novel-problem-discovery.md) for an evaluable unknown object, [Peppy](peppy-proof-bridge.md) for an eligible performance certificate, and [Lean](lean-formalization-bridge.md) for a stable formal target. A long project may need [state and dependencies](proof-state-machine.md); repeated failure may justify the bounded hard-exploration mode documented in [runtime recovery](runtime-recovery.md).
 
-Use `--hard-exploration` only at the lane trigger above. Fresh structural and adversarial scouts receive the frozen theorem, compact failures, and selected references, but not one another's proposals. A fresh selector can choose only one supplied route. It rejects theorem changes, disguised duplicates, circular key steps, and missing assembly; it defers plausible untried routes rather than deleting them. The selected plan remains an unverified hypothesis and is passed to the ordinary generator-referee loop.
-
-This is a conservative synthesis rather than a reproduction of any one paper. QED supports separating planning from execution and concentrating detail on the key original step, but its targeted ablations cover only two successful probability cases and its reported successful projects cost roughly USD 50 to USD 1000. The sum-product case study shows that a simple deep plan-construct-review conversation can succeed without elaborate orchestration, but it used about 132.4k reasoning tokens per trial and has no single-call or matched-budget ablation. Beyond the Frontier supports retaining under-scored historical states in PRM-guided benchmark search; here only a three-route untried pool transfers. The workbench does not possess that paper's PRM, token-prefix sampler, SMC weights, or A100 serving setup.
-
-### Retrieval
-
-Use retrieval for a named theorem, premise bundle, construction family, or proof pattern. Query by mathematical intent and the exact proof state, not surface similarity. Matlas and TheoremSearch seed candidates; LeanSearch, Lean Finder, LAMP, or library search help with formal declarations. Verify the primary source and assumption match. One useful premise or a clear mismatch ends the retrieval turn.
-
-Rethlas supports the cycle `broad target -> exact missing existence statement -> focused source -> independent construction`. It does not support unrestricted browsing until something looks plausible.
-
-### Computation And Clever Construction
-
-Use examples to conjecture a representation, invariant, extremal shape, active set, recurrence, or certificate. Separate discovery cases from holdouts. A guessed formula becomes a lemma only after exact algebra, an exhaustive finite certificate, a solver witness, or formal replay.
-
-PatternBoost, AlphaEvolve, MLEvolve, self-supervised theorem discovery, and related systems support population search only when a problem-specific evaluator exists. Their selection machinery is a construction aid, not proof evidence. Peppy is a narrower high-value instance for fixed-algorithm worst-case performance: numerical horizon sweep, full-PEP dual, low-rank Lyapunov structure, symbolic coefficient synthesis, then an all-horizon exact certificate. A floating dual or fixed-horizon pattern remains conjectural.
-
-### Durable Blueprint And Collaboration
-
-Use a blueprint only for a long or nonlocal proof. Goedel-Architect contributes a formally typed dependency DAG, declared-parent context, preserved solved nodes, and local revision of nodes diagnosed as `STATEMENT_WRONG` or `PROOF_TOO_HARD`. Draft-Sketch-Prove contributes informal draft, formal sketch, and gap filling. LeanArchitect contributes synchronized statement dependencies, proof status, and blueprint metadata. These are project controls, not idea generators.
-
-For multi-agent work, use artifact roles, not votes. A falsifier returns a witness, a retriever returns a source card, a tool specialist returns a replayable certificate, and a formalizer returns checked code plus trust footprint. One integrator owns theorem fidelity and final status. AI co-mathematician, STAR-PolyaMath, MechMath, and EvE motivate durable artifacts, trace-back, and stage-aware scheduling only after the lightweight lane stalls.
-
-### Formalization
-
-Formalize a stable local kernel or a full theorem whose encoding cost is justified. Start with direct formalization. If one coherent block fails, isolate it with exact context, solve it independently, merge by dependencies, and recompile. Use global decomposition only when the remaining structure is genuinely nonlocal.
-
-Kernel success proves the encoded declaration. It does not prove fidelity to the intended theorem, source lineage, library quality, or an unencoded parent. Audit `sorry`, admitted or unexpected axioms, invented hypotheses, definition weakening, object-class preservation, and final theorem assembly.
-
-### Open-Answer Discovery
-
-When the answer itself is unknown, freeze its admissible type and evaluator before search. Keep candidate discovery, witness soundness, completeness or optimality, and novelty coverage as separate obligations. Run literature-frontier checks and executable falsifiers. Use `apparently open` unless coverage is unusually strong. QED and From Solvers to Research reinforce that novel research still needs exact statement checks, citation verification, independent evaluation, and human mathematical judgment.
+The implementation imports available controls only. It does not reproduce private models, learned policies, PRMs, training, or token-prefix search. QED's two-case diagnostic ablations, the sum-product study's repeated trials on one target, and Beyond the Frontier's PRM-guided benchmark results remain differently scoped evidence, as recorded below.
 
 ## Source-To-Control Map
 

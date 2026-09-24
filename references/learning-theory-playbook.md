@@ -1,79 +1,35 @@
-# Learning Theory Playbook
+# Learning theory
 
-Use for generalization, empirical processes, uniform convergence, VC/Rademacher bounds, stability, PAC-Bayes, statistical learning rates, SGD-style convergence, and online-to-batch conversion.
+Use for generalization, empirical processes, statistical rates, stability, PAC-Bayes, and online-to-batch conversion.
 
-## Semantic Audit
+## Fix the probability statement
 
-Freeze the result's probability mode before choosing a proof:
+State expected, high-probability, almost-sure, or other convergence mode; pointwise versus uniform scope; iid versus adapted observations; and loss/noise tail assumptions. A data-dependent class needs a valid conditioning or complexity argument. Check measurability/separability of suprema and every interchange of supremum, expectation, or limit.
 
-- pointwise, uniform, almost sure, in probability, in expectation, high probability, or in `Lp`;
-- fixed or data-dependent function class, including which sigma-field makes it measurable;
-- bounded, sub-Gaussian, sub-exponential, or finite-moment loss/noise;
-- measurability or separability of suprema, integrability of envelopes, and any continuity or total-boundedness assumption;
-- every interchange of supremum, expectation, integral, conditional expectation, or limit.
+## Select the bound that matches the dependence
 
-Do not silently upgrade expectation to high probability, pointwise to uniform, or a fixed-class argument to an adaptively chosen class.
+| Setting | Kernel | Main obligation |
+| --- | --- | --- |
+| Fixed finite class | Concentration plus union bound | Simultaneous coverage of the whole class under the stated sampling law |
+| Fixed infinite class | Symmetrization and capacity control | Integrable envelope, measurable supremum, and a valid complexity/covering metric |
+| Local excess risk | Basic inequality and localized fluctuations | Curvature/Bernstein condition and a self-consistent radius bound |
+| Algorithmic stability | Compare neighboring samples | The stability notion implies the requested expected or tail guarantee |
+| PAC-Bayes | Change of measure from a prior to a posterior | Prior independence or an explicit data-dependent-prior theorem; KL and confidence terms retained |
+| Online-to-batch | Convert regret into population risk | Sampling/filtration, averaging rule, and convexity or randomized-output argument |
+| Optimization plus estimation | Decompose error | Each optimization, approximation, and estimation term uses the same objective and domain |
 
-## Branch Split
+## Localized empirical processes
 
-- Finite class: fixed-hypothesis concentration plus a union bound.
-- Infinite class: symmetrization, Rademacher/Gaussian complexity, covering number, VC dimension, contraction, or chaining.
-- Localized excess risk: basic inequality, localized class, concentration plus capacity, critical radius, then fixed-point closure.
-- Stability: compare neighboring samples and translate stability into generalization.
-- PAC-Bayes: choose prior/posterior, apply change of measure, and track the KL and confidence terms.
-- Optimization-to-generalization: separate estimation, approximation, and optimization errors.
-- Online-to-batch: specify averaging, convexity, filtration, and whether the conclusion is expected or high probability.
+Derive the estimator's basic inequality before choosing a complexity measure. Localize in the risk or metric that inequality controls, bound stochastic fluctuations on that class, and solve the critical-radius inequality. Then prove the estimator lies in the claimed region, using peeling, star-shaped scaling, or another justified closure argument. Assuming localization to prove localization is circular.
 
-## Localized Empirical-Process Route
+If the radius does not close, inspect curvature, the localization metric, and whether a global capacity bound was substituted for a local one. Optimizing an algebraic rate cannot repair a missing statistical premise.
 
-1. Derive the basic inequality for excess risk or estimation error.
-2. Define the localized class by the metric or risk quantity the inequality actually controls.
-3. Bound stochastic fluctuations by concentration and a capacity measure.
-4. Solve the critical-radius or fixed-point inequality with constants and monotonicity stated.
-5. Prove the estimator lies in the localized region, then close the self-consistent bound.
+## Chaining
 
-If the fixed point does not close, check curvature/Bernstein conditions, star-shapedness, the localization metric, and whether the capacity bound is global when a local one is required.
+Choose multiscale nets in the process's increment metric. Bound the telescoping increments with a valid allocation of failure probabilities or expected suprema, and justify convergence of the entropy sum/integral. Separability, path continuity, or an explicit approximation bound must control the terminal remainder. A sequence of finite-net bounds is not yet a uniform bound on the full class.
 
-## Chaining Route
+## Failure probes
 
-1. Choose multiscale nets in the correct metric and verify total boundedness.
-2. Write a telescoping chain from coarse projections to the target process.
-3. Control each increment at its scale and allocate failure probability across scales.
-4. Sum entropy terms or justify the entropy integral.
-5. Control the terminal remainder using continuity, separability, or an explicit approximation limit.
+Use a heavy-tailed loss to test hidden boundedness, an adaptively selected hypothesis to test conditioning, and a large or nonmeasurable class to test uniformity. Keep pointwise versus uniform and expectation versus tail conclusions separate. In SGD arguments, isolate deterministic descent, bias, and martingale noise before invoking concentration.
 
-A finite-net proof is incomplete if the limit to the full class lacks measurability, path continuity, integrability, or a vanishing remainder.
-
-## Smart Routes
-
-- Uniform claim from pointwise concentration: add a union bound, covering argument, VC step, symmetrization, or Rademacher route.
-- Adaptive or algorithm-dependent hypothesis: condition on the right history; use stability, PAC-Bayes, sequential complexity, or a martingale argument.
-- Bound too loose: replace a global union bound with contraction, localization, peeling, or chaining.
-- SGD proof stuck: separate deterministic descent, bias, and stochastic-noise martingale terms.
-- Persistent formal or algebraic failure: audit the theorem statement and construct the smallest distribution/class counterexample before rewriting the proof again.
-
-## Common Lemmas
-
-- Symmetrization and ghost samples.
-- Massart finite-class lemma and Sauer-Shelah growth bound.
-- Rademacher contraction and comparison inequalities.
-- McDiarmid, Azuma, Freedman, Bernstein, and self-normalized concentration.
-- Stability generalization and PAC-Bayes change of measure.
-- Peeling, covering-to-chaining, and critical-radius fixed-point lemmas.
-
-## Counterexample Tests
-
-- Infinite class without capacity control or measurability.
-- Unbounded loss without a tail or moment condition.
-- Data-dependent class treated as fixed after seeing the sample.
-- Expectation result stated as high probability, or pointwise convergence stated uniformly.
-- Non-iid or adaptively sampled data passed through an iid lemma.
-- Supremum, expectation, or limit exchanged without domination, uniform integrability, tightness, or continuity.
-
-## Tool Hooks
-
-- Python simulations for toy distributions and counterexample search.
-- Wolfram/SymPy for exact rate optimization over confidence, net scale, or critical radius.
-- Lean for stable local inequalities after the probability semantics and imported infrastructure are fixed.
-
-The semantic and formalization checks are informed by the [AI4SLT case study](https://arxiv.org/abs/2602.02285). Its project-specific workflow results do not establish a general theorem-proving success rate.
+The semantic checks are informed by the [AI4SLT case study](https://arxiv.org/abs/2602.02285); its project-specific results do not establish a general theorem-proving success rate.

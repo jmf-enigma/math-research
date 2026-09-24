@@ -1,82 +1,41 @@
 # Cold Prover-Verifier Loop
 
-Use this after a complete candidate proof exists, or earlier only when the whole route depends on one unusually fragile kernel. Verification should test mathematics, not co-author the initial idea.
+Use after a complete candidate exists. Earlier review is useful only when one strictly smaller, fragile kernel determines whether a coherent route survives.
 
 ## Separation Contract
 
-The prover receives the problem, selected premises, compact failure memory, and any checked artifacts needed to construct a proof.
+The prover receives the claim, selected premises, compact failure memory, and checked artifacts. The verifier receives the exact claim, candidate proof or counterexample, essential acceptance conditions, and cited source/tool evidence. Exclude route scores, generator confidence, hidden plans, and the desired verdict.
 
-The verifier receives only:
-
-- the exact claim and essential acceptance conditions;
-- the candidate proof or explicit counterexample;
-- source excerpts or tool artifacts actually cited by the candidate;
-- no route scores, generator confidence, hidden plan, or desired verdict.
-
-Use a fresh context when possible. A same-model fresh context reduces anchoring but remains advisory rather than formal proof.
+Prefer a fresh context. It reduces anchoring; it does not make model review formal proof. If delegation is unavailable, perform a distinct adversarial self-review and label it accordingly.
 
 ## Prover Contract
 
-The prover should:
-
-1. choose one motivated route;
-2. state its central object and first nonroutine implication;
-3. for a selected hard plan, expose and fully develop its key original step and conditional assembly;
-4. carry the route to a complete paper-order candidate;
-5. stop at the first exact obstruction if completion is impossible;
-6. avoid placeholder lemmas, theorem-strength assumptions, and citations that merely resemble the target.
-
-The visible candidate should contain mathematics only. Search logs and route management belong in project memory.
+Develop one motivated route through its central object, first nonroutine implication, and full assembly. Expose the key original step rather than hiding it in a theorem-strength lemma. Return a paper-order candidate or the first exact obstruction. Keep search history outside the candidate.
 
 ## Verifier Contract
 
-Read the proof sequentially and locate the earliest fatal error. Check:
+Read sequentially. Apply the [verification gate](verification-gate.md) to the candidate and return:
 
-- fidelity to the exact statement;
-- every quantified domain and boundary case;
-- assumption availability at the point of use;
-- definitions and theorem applicability;
-- existence and properties of constructed objects;
-- local deductions and global assembly;
-- citations or computational evidence supplied in the packet.
+| Verdict | Meaning |
+| --- | --- |
+| `correct` | The exact claim and applicable acceptance requirements are met, with no detected critical error or gap. |
+| `wrong` | A visible invalid deduction, contradiction, counterexample, or claim mismatch. |
+| `uncertain` | A necessary premise or artifact is absent, or a valid proof has not met an explicit simplification requirement. |
 
-Return one of:
-
-- `correct`: exact claim established with no critical error or gap;
-- `wrong`: a visible invalid deduction, contradiction, counterexample, or claim mismatch;
-- `uncertain`: a nontrivial premise or artifact needed for checking is absent.
-
-Always return the first error, its location, the violated obligation, and the smallest useful repair hint. Do not replace the proof with a new proof.
+For `wrong` or `uncertain`, give the earliest blocking location, violated obligation, witness or missing evidence, and smallest useful repair hint. For `correct`, identify the decisive checked implication and scope. Do not replace the candidate with a new proof.
 
 ## Repair Decision
 
-After rejection, classify the first error before acting.
+Classify the first error using [escalation routing](proof-escalation-protocol.md#escalation-ladder). One local repair may preserve the mechanism; a second rejection at the same goal, assumptions, object, and failure witness requires a changed route or representation.
 
-| Error | Action |
-| --- | --- |
-| Local algebra, omitted case, or missing cited premise | Repair once, then recheck the whole proof |
-| Claim mismatch or silent assumption | Restore the original statement and replan |
-| Central lemma false or unsupported | Retire or replace the central mechanism |
-| Assembly gap | Preserve independent lemmas, rebuild only the dependency path |
-| Missing source premise | Retrieve the exact source and check its assumptions |
-| Missing or stale tool evidence | Replay the named certificate; preserve the candidate and resume verification |
-| Referee process failure | Restore verification of the same candidate; no mathematical failure is recorded |
-
-One local repair is allowed while the same central mechanism survives. A second rejection at the same proof state requires a fresh representation or route.
+Missing or stale evidence calls for the named replay, then review of the same candidate. A referee process failure calls for restoring verification, not a new mathematical attempt. Dependency repair preserves independently valid lemmas and rechecks affected assembly.
 
 ## Local Kernel Exception
 
-Before a full proof exists, use a verifier only if all of the following hold:
-
-- the route is coherent except for one named kernel;
-- the kernel is strictly smaller than the theorem;
-- the verifier has the exact local assumptions and dependencies;
-- either verdict changes the route.
-
-Otherwise continue mathematical discovery. Repeatedly verifying speculative fragments creates local polish without global progress.
+Before a full proof exists, review a kernel only if its exact assumptions and dependencies are available, it is strictly smaller than the theorem, and either verdict changes the route. Otherwise continue discovery; reviewing speculative fragments does not advance global assembly.
 
 ## Promotion Boundary
 
-A model-accepted candidate is `referee-accepted`; its recorded disposition may be proof or refutation, while human review and formal verification remain false. An exact replayed CAS or solver artifact is `tool-checked` only for its encoded claim. A Lean lemma is `formalized-local` until the exact parent theorem is assembled and replayed. Outcome, evidence basis, and scope are separate; never promote by wording alone.
+Use [outcome, evidence, and scope](verification-gate.md#outcome-evidence-and-scope) to report the result. The controller records model acceptance as `referee-accepted`, with proof/refutation disposition and separate human/formal-check flags. No status is promoted by wording alone.
 
-Use `scripts/run_referee.py` for the fresh-context packet and `scripts/proof_loop.py` for bounded generation, first-error repair, and replanning.
+`scripts/run_referee.py` prepares the fresh-context check. `scripts/proof_loop.py` manages bounded generation, first-error repair, and replanning.

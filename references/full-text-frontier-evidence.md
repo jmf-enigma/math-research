@@ -1,23 +1,16 @@
 # Full-Text Frontier Evidence
 
-Use this only when a claim is being classified as known, open, or new, or when a nearby paper may supply a proof route. It turns literature work into a small auditable bundle rather than a prose claim that papers were checked.
+Use the full evidence bundle when classifying a claim as known, open, or new. For a nearby paper needed only as a premise or proof method, retrieve its exact statement/proof and create a solution card; no frontier classification or Scholar-query quota is required.
 
-A Matlas or TheoremSearch packet may seed candidate papers and exact statement searches, but it is not Scholar evidence, current-coverage evidence, verified metadata, or a source-text anchor. Start the ladder below from the candidates it suggests.
+Matlas/TheoremSearch can suggest candidates. Their packets do not establish current coverage, verified metadata, or source-text anchors.
 
 ## Evidence Ladder
 
-1. Discover candidates through Google Scholar. Model memory may suggest search terms but is not a search result.
-2. Verify metadata through DOI, arXiv, proceedings, or another official record.
-3. Retrieve a lawful full text. Prefer arXiv, publisher open access, Unpaywall, OpenAlex, Semantic Scholar `openAccessPdf`, an author copy, or the user's authorized local copy.
-4. Verify the artifact before reading: local path, `%PDF` signature when applicable, byte count, source URL, version, access status, and SHA-256.
-5. Read the exact theorem statement and proof. Record stable statement and proof anchors rather than citing the paper generally.
-6. Extract a solution card that says what mathematical move transfers and what new bridge remains.
-7. Record recent cited-by or active-project checks, the closest result, exact gap, limitations, and cutoff.
-8. Run the validator. Do not classify the frontier from hand-written `IDEA_MAP.md` fields alone.
+For a frontier classification: execute Scholar searches, verify official metadata, obtain and inspect the full text, anchor the relevant statement/proof, compare the closest result, check recent activity, and record the remaining gap with a cutoff and limitations. Validate the saved bundle before using its status. The validator checks recorded evidence, not novelty itself.
 
 ## Scholar Evidence
 
-With SerpAPI configured, preserve normalized or raw JSON from an executed Scholar query:
+With SerpAPI configured:
 
 ```bash
 codex-cite scholar "EXACT QUERY" --num 10 --json > /tmp/scholar-q1.json
@@ -29,45 +22,43 @@ python3 scripts/frontier_evidence.py add-query PROJECT \
   --method google-scholar-serpapi
 ```
 
-Without SerpAPI, use `codex-cite scholar-url`, inspect Scholar in a browser, and save a visible export, screenshot, or concise result record as the evidence file. Do not scrape Scholar or bypass CAPTCHA. Two distinct executed queries are the minimum gate, not a claim of exhaustive coverage.
+Without SerpAPI, inspect the generated Scholar URL in a browser and save an export, screenshot, or concise result record. Do not scrape or bypass CAPTCHA. The runtime requires two distinct executed queries for frontier validation; this is a recording minimum, not exhaustive coverage.
 
-Useful query families are the exact claim, equivalent terminology, central object plus theorem, closest stronger/weaker result, and cited-by or recent-year variants. Stop broadening when new queries no longer change the closest result or exact gap.
+Use exact-claim/equivalent terminology, central-object/theorem, stronger/weaker-result, and recent/cited-by variants as needed. Stop broadening when new queries no longer change the closest result or gap. Model memory is a query seed, not search evidence.
 
 ## Lawful Full Text
 
-`frontier_evidence.py fetch` supports four compact routes:
+`frontier_evidence.py fetch` supports:
 
 ```bash
-# arXiv PDF; add --include-source when LaTeX source helps locate exact mathematics
+# arXiv; include source only when it helps inspect the mathematics
 python3 scripts/frontier_evidence.py fetch PROJECT \
   --paper-id P1 --arxiv 1706.03762 --include-source
 
-# DOI: Crossref metadata, then Unpaywall when --mailto is supplied,
-# with Semantic Scholar openAccessPdf as a lawful fallback
+# DOI metadata and open-copy resolution
 python3 scripts/frontier_evidence.py fetch PROJECT \
   --paper-id P2 --doi 10.xxxx/xxxxx --mailto you@example.edu
 
-# SSRN abstract ID or URL: derive doi:10.2139/ssrn.ID, verify metadata,
-# and resolve a non-SSRN open copy through the DOI resolver chain
+# SSRN abstract identity and alternate open copies
 python3 scripts/frontier_evidence.py fetch PROJECT \
   --paper-id P3 --ssrn 3395992
 
-# Known lawful PDF URL with explicit official metadata
+# Known lawful PDF with official metadata
 python3 scripts/frontier_evidence.py fetch PROJECT \
   --paper-id P4 --url "OPEN_PDF_URL" \
   --title "TITLE" --authors "AUTHOR" --year 2025 \
   --identifier "official:ID" --verification-url "OFFICIAL_RECORD_URL"
 ```
 
-Set `UNPAYWALL_EMAIL` once instead of passing `--mailto` repeatedly. Optional `OPENALEX_API_KEY` and `SEMANTIC_SCHOLAR_API_KEY` values improve rate limits; never commit them to the skill or a proof project.
+Set `UNPAYWALL_EMAIL` instead of repeating `--mailto`. Optional OpenAlex/Semantic Scholar API keys improve access limits; do not commit them. Before reading, check source/version, local artifact, PDF signature where applicable, byte count, access status, and SHA-256. HTML challenges and metadata are not full text.
 
 ## SSRN And INFORMS
 
-For an SSRN record, use the abstract ID as the stable identity and derive `10.2139/ssrn.ID`. Do not try to construct a `download.ssrn.com` URL from the DOI. Those URLs contain AWS session credentials and signatures issued by SSRN, typically expire within minutes, and may use a document-version ID different from the abstract ID.
+Use the SSRN abstract ID and DOI `10.2139/ssrn.ID` as stable identity. Do not construct `download.ssrn.com` URLs from the DOI: signed download URLs expire and may use a different document-version ID.
 
-Run `fetch --ssrn` first. It queries Unpaywall, OpenAlex, and Semantic Scholar, rejects candidates that merely point back to SSRN, and uses exact-title plus author matching for alternate records. If that chain has no PDF, automatically search the exact title and one author for an institutional repository, author manuscript, RePEc-linked copy, EconStor, NBER, HAL, arXiv, Optimization Online, or another lawful repository. Do this bounded mirror scan before asking the user to handle SSRN. Verify the PDF first page against title and authors, then anchor metadata at the SSRN DOI.
+Run `fetch --ssrn` first. It checks Unpaywall, OpenAlex, and Semantic Scholar, excludes links back to SSRN, and matches alternate records by exact title plus author. If unresolved, make a bounded exact-title/author search for institutional or author manuscripts and lawful repositories before asking for user access. Verify the PDF title/authors and retain the SSRN DOI as metadata anchor.
 
-If Crossref reveals a published DOI and the bounded web search supplies an author-hosted PDF, keep metadata automatic:
+For a published DOI with a verified open manuscript:
 
 ```bash
 python3 scripts/frontier_evidence.py fetch PROJECT \
@@ -76,18 +67,18 @@ python3 scripts/frontier_evidence.py fetch PROJECT \
   --version "accepted or submitted manuscript"
 ```
 
-If a real authorized browser session produces a fresh signed SSRN URL, consume it immediately without storing the token:
+A fresh signed URL from an already authorized browser session can be consumed immediately:
 
 ```bash
 python3 scripts/frontier_evidence.py fetch PROJECT \
   --paper-id P3 --ssrn 3395992 --ssrn-signed-url "FRESH_DOWNLOAD_URL"
 ```
 
-The helper checks `download.ssrn.com`, the abstract ID, and the AWS expiry, stores only the stable SSRN landing page plus the downloaded artifact hash, and discards the temporary credential. Prefer a browser-native download followed by `register-local` when the browser controller cannot safely expose the URL. Reuse the authorized browser profile; stop only when SSRN presents a new CAPTCHA, OTP, paywall, or account challenge.
+The helper checks host, abstract ID, and AWS expiry; it retains the stable landing page and artifact hash, discarding the temporary credential. Prefer browser-native download and `register-local` when the browser controller cannot safely expose the URL. Reuse existing authorized access; stop at a new authentication, paywall, or protective challenge.
 
-For an INFORMS paper, start from its published DOI and run the ordinary DOI route. If the version of record is unavailable, search the exact title and authors for an SSRN working paper or accepted manuscript. Treat it as a proof source only after comparing theorem statements, assumptions, appendix/supplement structure, and revision dates against the published record; theorem numbering and proofs can differ across versions.
+For INFORMS, resolve the published DOI first, then search title/authors for an accepted manuscript or SSRN version. Before using an alternate version as a premise, compare statement, assumptions, appendices/supplements, and revision dates: theorem numbers and proofs may differ.
 
-For a user-provided or institution-authorized local copy:
+Register user-provided or institution-authorized copies:
 
 ```bash
 python3 scripts/frontier_evidence.py register-local PROJECT \
@@ -97,13 +88,11 @@ python3 scripts/frontier_evidence.py register-local PROJECT \
   --version "version of record" --access "institution-authorized" --license "all rights reserved"
 ```
 
-If browser-based institutional access is needed, use an installed lawful downloader or browser-control skill only with the user's active authorized session. Stop at passwords, CAPTCHA, QR login, OTP, DRM, or bot challenges. Register the resulting local file afterward. `no_authorized_pdf_found` is evidence of retrieval failure, not permission to bypass access controls.
+Use authorized browser/downloader access without bypassing passwords, CAPTCHA, OTP, DRM, or bot challenges. `no_authorized_pdf_found` records retrieval failure, not absence of a result or permission to bypass controls.
 
 ## Source Anchors And Solution Card
 
-Prefer anchors such as `Theorem 3, p. 11`, `Proof of Lemma 5, pp. 19-21`, a stable HTML section, or arXiv source file and line span. A title, abstract, or general page number is not a proof anchor.
-
-After reading, record:
+Use a precise theorem/proof/page anchor, stable HTML section, or source file/line span. A title or abstract cannot support a proof claim.
 
 ```bash
 python3 scripts/frontier_evidence.py mark-read PROJECT \
@@ -120,11 +109,9 @@ python3 scripts/frontier_evidence.py mark-read PROJECT \
   --evaluator "CHEAPEST FALSIFIER OR CHECKER"
 ```
 
-The solution card is not a paper summary. It must distinguish the source theorem from the user's theorem and produce one bounded next move. If nothing transfers, say so explicitly and identify the failed assumption match.
+A solution card distinguishes source and target, identifies the transferable move, and exposes the new bridge. If nothing transfers, record the failed assumption match. A paper summary alone does not change the proof state.
 
 ## Frontier Decision
-
-Record active-work checks and the bounded classification:
 
 ```bash
 python3 scripts/frontier_evidence.py set-activity PROJECT \
@@ -141,8 +128,8 @@ python3 scripts/frontier_evidence.py validate PROJECT
 python3 scripts/proof_doctor.py PROJECT
 ```
 
-Use `apparently-open` unless coverage is unusually strong. A valid bundle confirms that the recorded files match their hashes and required search/reading fields are present. The `proof-read` status, anchors, and solution card are declared reading evidence for inspection; the validator does not independently establish that a human or agent read the proof. It does not prove exhaustive literature coverage or the truth of the paper.
+Use `apparently-open` unless coverage supports a stronger label. Validation confirms hashes and required fields. `proof-read`, anchors, and solution cards are inspectable declarations of reading, not independently established reading or mathematical truth. A valid bundle does not establish exhaustive coverage.
 
 ## Design Source
 
-This layer adapts two useful patterns from [nature-skills](https://github.com/Yuan1z0825/nature-skills): the downloader's explicit access and failure states plus PDF-signature checks, and the reader's stable full-document source map. It deliberately omits the project's institution-specific CDP, CARSI, CNKI, translation, figure, and browser-preview machinery. The proof workbench needs a compact evidence chain and transferable mathematical structure, not a second literature-management system.
+The artifact checks and explicit access/failure states adapt the downloader and stable source-map patterns from [nature-skills](https://github.com/Yuan1z0825/nature-skills). Institution-specific browser, translation, and preview machinery is outside this proof workflow.

@@ -1,53 +1,50 @@
 # Verification Gate
 
-Use before presenting a hard proof as complete. Check the mathematics that bears on this claim; do not produce a long checklist or require every available tool.
+Use before delivering a hard proof or refutation. Inspect the obligations the argument actually creates; do not turn this reference into a visible checklist.
 
 ## Outcome, evidence, and scope
 
-These are separate axes, not a confidence ladder.
+Report these separately:
 
-| Axis | Examples |
+| Axis | Question |
 | --- | --- |
-| Mathematical outcome | Proof, refutation, partial result, conditional result, known literature answer, unresolved |
-| Evidence basis | Written derivation, model referee, human review, exact computation, formal proof |
-| Scope | One instance, finite class, local lemma, restricted theorem, full original theorem |
-| Fidelity | Exact original statement, faithful encoding, explicitly repaired theorem, unresolved translation |
+| Outcome | Proof, refutation, conditional result, or unresolved? |
+| Basis | Written derivation, model referee, human review, exact computation, or formal checking? |
+| Scope | Instance, finite class, local lemma, restricted theorem, or original theorem? |
+| Fidelity | Original statement, justified encoding, explicit repair, or unresolved translation? |
 
-The executable loop uses `referee-accepted` and an `evidence_summary` with the disposition, scope, candidate and claim identity, and explicit human/formal-check flags. The model referee can reject a candidate or identify a gap; its agreement does not certify the theorem. Independently inspect its decisive reasoning before reporting a proved or refuted original claim.
+`referee-accepted` records a model verdict, not certification. Inspect its decisive reasoning. The executable loop's `evidence_summary` binds the disposition and scope to the claim and candidate and records human/formal-check flags separately.
 
-Legacy labels remain readable: `human-proof` denotes an asserted prose proof, not an automatically recorded human review; `counterexample-tested` means a bounded search found no witness; `tool-checked` and `formalized-local` require a stated scope. `formalized-complete` requires the exact parent statement and all dependencies to pass the formal trust audit. Historical labels alone are insufficient evidence.
+Legacy labels are not evidence: `human-proof` means an asserted prose proof, not a recorded human review; `counterexample-tested` means no witness was found in a bounded search. `tool-checked` and `formalized-local` apply only to their checked target. `formalized-complete` requires the original parent statement, its dependencies, and the formal trust audit.
 
 ## Four core checks
 
-1. **Statement and assumptions.** Match the original variables, domains, quantifiers, definitions, hypotheses, and conclusion. Check the boundaries and ties actually relevant to the proof. Any change is explicit theorem repair.
-2. **Decisive reasoning.** Inspect the first nonroutine implication and every dependency it consumes. Cite exact applicable premises or give derivations. Plausibility, a tool's success code, and a referee's confidence do not fill gaps.
-3. **Completion-coverage gate.** Assemble the proved components into every required part of the original claim. A correct local lemma, a restricted case, or a merely sufficient condition does not establish a broader theorem.
-4. **Adversarial review.** Attempt to break the fragile step using its negation, a boundary case, an independent derivation, or an appropriate checker. If it fails, preserve independently valid work and return the exact obstruction.
+1. **Statement fidelity.** Match variables, domains, quantifiers, definitions, assumptions, and conclusion. A changed premise or conclusion is theorem repair, even if the replacement is easier to prove.
+2. **Decisive implication.** Inspect the first nonroutine step and the dependencies it consumes. Give the derivation or the exact applicable theorem; agreement, successful execution, and plausible notation cannot supply it.
+3. **Completion-coverage gate.** Assemble the components into every part of the original claim. Check relevant boundaries, ties, existence, and limiting arguments. A sufficient local condition proves the theorem only after that condition is established.
+4. **Adversarial check.** Attack the fragile step using its negation, a boundary case, an independent derivation, or a suitable checker. On failure, retain only results whose dependencies survive.
 
 ## Conditional checks
 
-Load or apply only the row triggered by the proof.
-
-| Trigger | Check |
+| Trigger | Required evidence |
 | --- | --- |
-| Changed representation or custom definitions | **Semantic-obligation gate:** verify the concrete maps, domains, feasibility, closure, multiplicity, and recovery direction actually needed. Test basic definition consequences. See [representation witnesses](representation-witness.md). |
-| A construction or formula guessed from examples | Reserve a case not used to guess it, then derive a quantified proof or independently checkable certificate. No finite search silently becomes a general theorem. |
-| Retrieved theorem | Read the exact source and surrounding definitions; check version, hypotheses, and applicability. Inspect the proof move when transferring it. Novelty checking is separate and only needed when novelty is claimed. |
-| CAS, solver, or computation | Replay inputs, assumptions, executable/version, output, and certificate. Identify exact versus floating or sampled scope, and translate back to the theorem. |
-| Lean or another formal checker | Freeze the target; audit `sorry`, admissions, unexpected axioms, dependencies, and the intended environment. Check statement fidelity and full parent assembly separately from kernel acceptance. |
-| A decomposition spans several lemmas | Require sufficiency, acyclicity, strict simplification, and actual downstream consumption. Repair only affected dependents. |
-| Repeated failure or budget interruption | Restore the pending action and first error; distinguish missing evidence, a failed mechanism, and a process error. Re-open mathematical work only with a changed artifact or a justified new route. |
-| Reusable library code requested | Review natural definitions, useful generality, namespaces, and a small API. This is a reuse check, not a truth criterion. |
-
-Examples of targeted attacks include necessary versus sufficient KKT conditions, adaptive versus independent data, missing limit-exchange conditions, nonattainment, nonunique optimizers, and unproved preservation under maximization. Select the attack relevant to the argument; do not enumerate them all in every proof.
+| New representation or custom definition | **Semantic-obligation gate:** concrete maps, admissible domains, and the feasibility, closure, multiplicity, or recovery properties used by the proof. See [representation witnesses](representation-witness.md). |
+| Formula or construction inferred from examples | A case not used to infer it, followed by a quantified derivation or independently checkable certificate. The extra case tests the guess; it does not prove generality. |
+| Retrieved theorem | Exact source statement, surrounding definitions, version, and hypothesis match. Read the proof move if transferring the method. Frontier/novelty classification is a separate task. |
+| CAS, solver, or computation | Inputs and assumptions, current replay, exact versus floating/sampled scope, and the step connecting the output to the theorem. See [computation replay](tool-assisted-proof-patterns.md#replayable-computation). |
+| Formal proof | Frozen target, current file/environment replay, admissions and axiom audit, statement fidelity, and parent assembly. See [Lean bridge](lean-formalization-bridge.md). |
+| Lemma decomposition | Acyclic dependencies, strictly smaller children, and a parent proof that actually consumes them. Revise only affected dependents. |
+| Replacement for a long proof | Complete coverage after removing the replaced argument, with fewer independent obligations. See [structural proof compression](structural-proof-compression.md). |
+| Interrupted or stale evidence | Restore the pending check before changing the mathematics. See [runtime recovery](runtime-recovery.md). |
+| Reusable formal library requested | Natural definitions, useful generality, namespaces, and a usable API. This is a reuse criterion, not a truth criterion. |
 
 ## Final report
 
-Give the exact result or obstruction, the decisive mechanism, essential assumptions, and the scope of any external check. Name unresolved dependencies and explicit theorem repairs. Show a lemma graph or audit details only when they help the reader assess the result. Do not replace a mathematical proof with workflow records.
+Give the exact result or obstruction, decisive mechanism, essential assumptions, and scope of external checks. Identify unproved dependencies and explicit repairs. Include a dependency graph or audit record only when it helps assess the mathematics.
 
 ## Recording a refutation
 
-For a durable project marked `refuted`, save the counterexample and its assumption/conclusion checks in a project-local file. Record its actual checking or review basis in the current theorem revision, for example:
+In durable mode, save the witness with its original-assumption and conclusion checks in a nonempty project-local file. Record the actual checking basis under the current theorem revision:
 
 ```json
 {
@@ -59,4 +56,4 @@ For a durable project marked `refuted`, save the counterexample and its assumpti
 }
 ```
 
-Append the saved JSON with `proof_runtime.py append PROJECT counterexamples --record-file RECORD.json`. The runtime records the current witness file hash automatically. The doctor requires an original-theorem record, its checking basis, and an unchanged nonempty witness file before recommending delivery of a refutation. A local-lemma counterexample does not close the original theorem; a `refuted` ledger label alone is insufficient. An older record without a file hash needs checking and recording again. The hash preserves the inspected text; it does not verify the mathematics or create an independent review.
+Use `proof_runtime.py append PROJECT counterexamples --record-file RECORD.json`; the runtime records the witness hash. The doctor requires an original-theorem record, checking basis, and unchanged nonempty witness before recommending delivery. Recheck and rerecord older entries lacking a hash. A child-lemma or encoding counterexample refutes only that target. Hashes preserve inspected text; they do not check mathematics or create an independent review.

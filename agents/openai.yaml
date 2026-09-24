@@ -1,6 +1,6 @@
 interface:
   display_name: "Math Research"
-  short_description: "Find a natural route, verify it, and recover hard proofs"
-  default_prompt: "Use $math-research. Preserve the exact claim and find its controlling mathematical object. If that object is missing, choose one high-leverage discovery move instead of generic brainstorming. Carry one motivated route end to end, justify representation maps, resume from checked work, and report complete candidates with their evidence scope."
+  short_description: "Find proof mechanisms, simplify arguments, verify scope"
+  default_prompt: "Use $math-research to find the controlling mechanism, complete the exact proof or counterexample, and state any unresolved gap."
 policy:
   allow_implicit_invocation: true
