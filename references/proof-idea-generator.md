@@ -2,6 +2,8 @@
 
 Use this only when the theorem is not directly solvable because its central object, construction, or first nonroutine implication is missing. It is a menu, not a checklist.
 
+For an already complete proof whose mechanism is obscured by computations or case splits, start with [structural proof compression](structural-proof-compression.md). Reuse a lens below only when that task exposes a missing kernel.
+
 An idea is an executable hypothesis. It predicts one local mathematical fact, names the cheapest way to support or kill it, and changes the next action.
 
 ## The Compact Pass

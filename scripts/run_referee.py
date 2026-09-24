@@ -50,6 +50,15 @@ counterexample or contradiction to the claim: every original assumption must hol
 conclusion must fail. Check the acceptance contract, quantifiers, domains, edge cases, cited
 premises, local deductions, and global assembly.
 
+If the acceptance contract requests structural simplification, separately assess whether the
+same theorem is proved and whether the claimed reduction in proof obligations is demonstrated.
+Renaming a long calculation or moving it into a lemma does not alone meet that request. Record
+an unmet simplification obligation as `failure_kind=simplification-gap` with verdict `uncertain`
+only when the mathematical proof is valid and the sole unmet obligation is simplification.
+State the missing reduction in `gaps` and `first_error`, keep `critical_errors` empty, and leave
+passing theorem-fidelity and assumption checks intact. This requests a new proof route; it does
+not call the theorem false. If correctness itself is uncertain, use its actual failure kind.
+
 Locate the earliest invalid or unsupported step. Later deductions depending on that step are not
 independent evidence. A plausible sketch, numerical pattern, or same-model confidence is not a
 proof. Classify that first obstruction in `failure_kind`. Use `missing-packet-evidence` and
@@ -114,6 +123,7 @@ VERIFICATION_SCHEMA: dict[str, Any] = {
                 "assumption-gap",
                 "boundary-gap",
                 "assembly-gap",
+                "simplification-gap",
                 "tool-evidence-gap",
                 "referee-runtime"
             ],
@@ -421,6 +431,7 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
         "assumption-gap",
         "boundary-gap",
         "assembly-gap",
+        "simplification-gap",
         "tool-evidence-gap",
         "referee-runtime",
     }
@@ -473,6 +484,18 @@ def validate_verdict(payload: Any) -> tuple[dict[str, Any], list[str]]:
         schema_problems.append("repair_hints must be an array of strings")
     if schema_problems:
         raise ValueError("invalid referee output schema: " + "; ".join(schema_problems))
+    if failure_kind == "simplification-gap":
+        if (critical or not gaps
+            or any(block.get("status") != "pass" for block in status_blocks.values())
+            or not first_error.get("location", "").strip()
+            or not first_error.get("issue", "").strip()):
+            raise ValueError(
+                "simplification-gap requires passing theorem checks, a concrete gap, and no mathematical errors"
+            )
+        if verdict == "wrong":
+            problems.append(
+                "wrong verdict downgraded: an unmet simplification request does not make a valid proof mathematically wrong"
+            )
     if verdict == "correct":
         if failure_kind != "none":
             problems.append("correct verdict requires failure_kind none")

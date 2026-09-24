@@ -150,6 +150,8 @@ def referee_action(verdict: dict[str, Any]) -> tuple[str, str | None]:
         return "awaiting-evidence", "tool-replay"
     if kind == "missing-packet-evidence":
         return "awaiting-evidence", "retrieval"
+    if kind == "simplification-gap" and verdict.get("verdict") == "uncertain":
+        return "replan", None
     if verdict.get("verdict") != "wrong":
         return "awaiting-evidence", "independent-review"
     if kind in {"claim-mismatch", "assumption-gap", "assembly-gap", "central-mechanism-failure"}:

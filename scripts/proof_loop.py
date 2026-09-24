@@ -202,6 +202,14 @@ construction and residual algebra, abstraction-refinement, bottom-up special-cas
 source-checked proof migration. Do not enumerate them as parallel sketches. Convert the chosen
 move into one exact proof kernel and one decisive falsifier before drafting the full proof.
 
+If the acceptance contract requests structural simplification of a supplied proof, identify one
+costly block and the shared relation behind its estimates. Derive one replacement kernel from
+that relation, then reassemble the same theorem without relying on the block being replaced.
+Explain which cases, coefficients, or separate estimates it removes, including the cost of new
+definitions and boundary conditions. Preserve legitimate computational leaves if not eliminated.
+Shorter prose or naming the old calculation is not by itself a structural improvement. Keep
+the theorem's correctness separate from whether the requested simplification was achieved.
+
 When changing representation, supply the concrete map and the recovery implication; preserve
 domains, quantifiers, feasibility, multiplicity, and boundary cases that the target needs.
 For an optimization equivalence, both feasibility directions and objective ordering need

@@ -1,13 +1,13 @@
 ---
 name: math-research
-description: "Use for hard, blocked, suspect, previously failed, open, or unknown-answer theoretical problems in OR/MS, dynamic programming, mechanism design, economic theory, learning theory, bandits, online learning, optimization, games, lower bounds, and probabilistic constructions. Use when Codex must discover or debug mathematics, find a construction or proof kernel, coordinate retrieval or mathematical tools, preserve decisive failure memory, or report an exact obstruction. Do not use merely to polish an already complete proof."
+description: "Use for hard, blocked, suspect, previously failed, open, or unknown-answer theoretical problems in OR/MS, dynamic programming, mechanism design, economic theory, learning theory, bandits, online learning, optimization, games, lower bounds, and probabilistic constructions. Use to discover or debug mathematics, find a construction or proof kernel, replace a calculation-heavy complete proof with a structural argument, coordinate mathematical tools, or recover from failed routes. Do not use merely to polish an already complete proof."
 ---
 
 # Math Research
 
 Own the mathematics, not the ceremony. Start with one natural proof line, keep orchestration in the background, and escalate only at a named obstruction.
 
-Use `math-proof-writing` when the user needs exposition or polishing of a completed argument. Use `math-tools`, Lean, Peppy, or literature search only for a specific local question whose answer changes the proof state.
+Use `math-proof-writing` when the mathematical route stays fixed and the user needs better exposition. Finding a new mechanism that simplifies an existing complete proof belongs here. Use `math-tools`, Lean, Peppy, or literature search only for a specific local question whose answer changes the proof state.
 
 ## Invariants
 
@@ -27,6 +27,8 @@ State the exact claim compactly. Check definitions, quantifiers, boundary cases,
 For a problem extracted from a paper, read the surrounding definitions and check whether the same source later answers or qualifies it. Freeze the source version only when it affects the target or a cited premise.
 
 ### 2. Find the mechanism
+
+When the user asks to replace a calculation-heavy or pieced-together proof, use [structural-proof-compression.md](references/structural-proof-compression.md). Start from one costly block of the old argument, infer the shared relation behind its estimates, and prove a replacement kernel. Keep the old proof until the replacement covers the same claim; shorter prose alone is not a structural improvement. This is an optional discovery task, not a required pass after every proof.
 
 Before drafting, answer three questions:
 
@@ -148,6 +150,7 @@ Keep one proof owner. Delegate one named artifact and require a status-preservin
 Read at most one process reference and one domain playbook for the current decision.
 
 - Missing central object or clever construction: [proof-idea-generator.md](references/proof-idea-generator.md); if its compact pass stays generic, run `plan_idea.py "EXACT CLAIM" --discovery` once before hard exploration
+- Structural simplification of an existing proof: [structural-proof-compression.md](references/structural-proof-compression.md)
 - Repeated route or long project: [proof-state-machine.md](references/proof-state-machine.md), then [strategy-scheduler.md](references/strategy-scheduler.md) only if routes truly compete
 - Literature premise or proof migration: [external-proof-pattern-scan.md](references/external-proof-pattern-scan.md)
 - Natural-language verification: [prover-verifier-loop.md](references/prover-verifier-loop.md)

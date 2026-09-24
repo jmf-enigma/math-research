@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import proof_loop as loop
 import proof_runtime as runtime
-from loop_checkpoint import load_checkpoint
+from loop_checkpoint import load_checkpoint, referee_action
 from run_referee import validate_verdict
 from smoke_proof_loop import MOCK_CODEX
 
@@ -46,6 +46,16 @@ if output.name == "generation.json" and forced == "follow-plan" and packet.get("
     plan = packet["stable_plan"]
     payload.update(route_family=plan["route_family"], central_object=plan["central_object"],
                    proof_kernel=plan["key_original_step"], assumptions_used=plan["assumptions_used"])
+if output.name == "generation.json" and forced == "simplification-gap":
+    payload.update(route_family="four residue cases", central_object="n modulo four",
+        proof_kernel="factor each of four products separately",
+        candidate_markdown=Path(packet["references"][0]["path"]).read_text())
+elif output.name == "generation.json" and forced == "simplification-replacement":
+    payload.update(route_family="consecutive parity", central_object="one even factor",
+        proof_kernel="consecutive integer residues modulo two are distinct",
+        candidate_markdown="# Proof\\n\\nThe residues of n and n+1 modulo two differ by one, "
+        "so one is zero. The product therefore has an even factor and is even for every "
+        "integer n. This single relation replaces the four separate product expansions.\\n")
 if output.name == "verification.json":
     project = Path.cwd().parents[2]
     if forced == "mutate-candidate":
@@ -73,6 +83,12 @@ if output.name == "verification.json":
         payload.update(verdict="uncertain", failure_kind=forced,
             first_error={"location": "certificate", "issue": "Replay the exact sign certificate."},
             gaps=[{"location": "certificate", "issue": "Missing replay."}], critical_errors=[])
+    elif forced == "simplification-gap":
+        issue = "The valid proof repeats the supplied four cases without reducing their obligations."
+        payload.update(summary="The theorem is proved, but structural simplification is unmet.",
+            verdict="uncertain", failure_kind=forced,
+            first_error={"location": "simplification requirement", "issue": issue},
+            gaps=[{"location": "simplification requirement", "issue": issue}], critical_errors=[])
     elif forced and payload["verdict"] == "wrong":
         payload["failure_kind"] = forced
         payload["first_error"] = {"location": "target", "issue": "The central implication proves a different quantified statement."}
@@ -161,6 +177,65 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(second["status"], uninterrupted["status"])
         for field in ("iterations", "agent_calls"):
             self.assertEqual(second["cumulative_usage"][field], uninterrupted["cumulative_usage"][field])
+
+    def test_valid_unsimplified_proof_replans_and_resumes_to_replacement(self):
+        name = "simplification"
+        self.run_case(name, extra=("--prepare-only",))
+        project = self.root / name
+        claim_file = project / "claim.md"
+        claim_file.write_text(claim_file.read_text().replace(
+            "## Acceptance Contract", "## Acceptance Contract\n\n"
+            "Replace the supplied four residue cases with a structural simplification."
+        ))
+        old_proof = (
+            "# Proof\n\nWrite n=4q+r with integer q and r in {0,1,2,3}. "
+            "For r=0, n(n+1)=2[2q(4q+1)]; for r=1, it is 2[(4q+1)(2q+1)]; "
+            "for r=2, it is 2[(2q+1)(4q+3)]; for r=3, it is 2[2(q+1)(4q+3)]. "
+            "Every bracket is an integer, so the product is even.\n"
+        )
+        source = project / "old-proof.md"
+        source.write_text(old_proof)
+        references = ("--reference", "old-proof.md")
+        first = self.run_case(name, failure="simplification-gap", extra=references)
+        self.assertEqual(first["status"], "budget-exhausted")
+        checkpoint = self.checkpoint(name)
+        self.assertEqual(checkpoint["phase"], "replan")
+        self.assertIsNone(checkpoint["pending_candidate"])
+        self.assertEqual(checkpoint["referee_feedback"]["failure_kind"], "simplification-gap")
+        reports = list(runtime.iter_channel(project, "verification_reports"))
+        self.assertTrue(reports)
+        self.assertEqual(first["last_feedback"]["verdict"], "uncertain")
+        self.assertEqual(source.read_text(), old_proof)
+
+        resumed = self.run_case(name, failure="simplification-replacement", extra=references)
+        self.assertEqual(resumed["status"], "referee-accepted")
+        packet = self.packet(name, resumed)
+        self.assertEqual(packet["mode"], "replan")
+        self.assertIsNone(packet["previous_candidate"])
+        self.assertEqual(packet["referee_feedback"]["failure_kind"], "simplification-gap")
+        self.assertEqual(resumed["cumulative_usage"]["iterations"], 2)
+        self.assertEqual(resumed["cumulative_usage"]["agent_calls"], 4)
+        self.assertEqual(source.read_text(), old_proof)
+        self.assertIn("single relation replaces", Path(resumed["artifact"]).read_text())
+
+    def test_simplification_gap_preserves_theorem_truth_and_other_uncertainty_routes(self):
+        gap = {"location": "simplification", "issue": "The four cases remain unchanged."}
+        verdict = dict(summary="Valid proof, unmet simplification.", verdict="wrong",
+                       failure_kind="simplification-gap",
+                       claim_fidelity={"status": "pass", "issue": ""},
+                       assumption_coverage={"status": "pass", "issue": ""},
+                       first_error=gap, critical_errors=[], gaps=[gap], repair_hints=[])
+        checked, problems = validate_verdict(verdict)
+        self.assertTrue(problems)
+        self.assertEqual(checked["verdict"], "uncertain")
+        self.assertEqual(referee_action(checked), ("replan", None))
+        for kind, capability in (("assembly-gap", "independent-review"),
+                                 ("missing-packet-evidence", "retrieval"),
+                                 ("tool-evidence-gap", "tool-replay")):
+            self.assertEqual(referee_action({**checked, "failure_kind": kind}),
+                             ("awaiting-evidence", capability))
+        with self.assertRaisesRegex(ValueError, "simplification-gap requires"):
+            validate_verdict({**checked, "critical_errors": [gap]})
 
     def test_awaiting_plan_is_stable_and_idle_until_evidence(self):
         first = self.run_case("plan", "blocked", extra=("--hard-exploration",))

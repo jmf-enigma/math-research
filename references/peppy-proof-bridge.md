@@ -72,6 +72,8 @@ For no-repeat memory, identify a Peppy attempt by the recurrence, class, metric,
 
 ## Structural Analogy
 
+For an existing PEP certificate whose structure is hard to see, [Yoon et al. (2026), §§3.1–3.4](https://arxiv.org/html/2606.26077v1) give a conversion through partial sums, rank structure, and meaningful local bases before solving for analytic coefficients. Use those signals within this bridge's eligibility gate. A large raw certificate need not require a large state; conversely, renaming its entire history as a potential does not establish a simpler proof. See [structural proof compression](structural-proof-compression.md) for the replacement criterion.
+
 Completed examples may suggest a nearby certificate shape. Compare recurrence type, oracle/class assumptions, objective, active interpolation constraints, rank profile, and boundary terms before borrowing a pattern. An analogous example is an idea source, never a premise. If the borrowed structure survives a holdout horizon and exact identity check, promote only that verified structure.
 
 ## Research Basis And Credit

@@ -58,6 +58,10 @@ open a full proof project unless the direct route reaches a precise obstruction.
 
 The active proof context asks three questions: why the claim may be true, what object controls it, and what the first nonroutine implication is. Auxiliary lemmas must be motivated, consumed by the route, and simplify the parent target.
 
+### Simplifying an existing proof
+
+An already complete proof can still need mathematical discovery. When asked to replace extensive calculations or case splits, the skill [extracts a shared mechanism](references/structural-proof-compression.md) from one costly block, proves a replacement kernel, and checks the full assembly. It explains which obligations disappear and which computational leaves remain. The original proof is preserved until replacement; prose compression alone does not count. The [2026 Lyapunov-conversion paper](https://arxiv.org/abs/2606.26077) supplies a concrete example for eligible optimization certificates.
+
 ### Adaptive escalation
 
 Only a named obstruction activates a specialist capability.
@@ -208,6 +212,10 @@ https://github.com/jmf-enigma/math-research
 ### 自然证明通道
 
 第一轮只问三个数学问题：命题为什么可能为真，什么对象控制结论，以及第一个真正不平凡的推理是什么。辅助引理必须有明确来源、会被后续路线使用，并使 parent target 严格变简单。
+
+### 从已有证明中提炼结构
+
+已有完整证明也可以继续做数学发现。对于计算很多、分类拼凑或系数来源不清的证明，按需进入[结构提炼](references/structural-proof-compression.md)：先找一块复杂计算实际共同控制的量，再证明能够替代它的统一引理，最后检查原命题的全部边界与依赖。报告具体省掉了哪些证明责任、还保留哪些计算；新路线完成前保留原证明。缩短文字或把计算藏进引理不算结构上的改进。
 
 ### 按障碍升级
 

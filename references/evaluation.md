@@ -26,6 +26,8 @@ Give the solver the exact user request, the skill, and minimal raw inputs. Withh
 - Unsupported promotion, missing assumptions, fabricated premises, and local/global confusion.
 - Unnecessary orchestration, duplicated work on resume, and actual resource use.
 
+For structural simplification, also supply the old proof and ask the reviewer to distinguish correctness from reduced mathematical burden. Check that the replacement covers the old block's downstream uses and that new definitions or hidden computations do not merely relocate its cost. A known example is a workflow check, not evidence of novel discovery or a comparative gain.
+
 Record model identifier as reported, requested reasoning effort, CLI/tool versions, skill commit or file hashes, task and reference hashes, prompts, outcomes, first fatal error, and per-run costs. Keep unavailable usage fields null. Count retries, failed runs, scouts, verifiers, and external tool calls. Equal iteration counts alone do not imply equal compute; if token/cost telemetry is unavailable, describe only the equal wall-time/call grants actually enforced.
 
 Report denominators, failure cases, and variance over repeats before claiming gains. A selected set of previously solved tasks cannot estimate general solve rate. A few forward tests can detect regressions but cannot establish improved discovery on unseen research mathematics. Novelty is a separate literature question, not a correctness score.
